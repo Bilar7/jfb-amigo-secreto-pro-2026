@@ -17,7 +17,7 @@ export function WishesScreen({ ownerId, ownerName }: { ownerId?: string; ownerNa
   const mine = !ownerId || ownerId === user.id;
   const [theirs, setTheirs] = useState<WishItem[] | null>(null);
   const [cat, setCat] = useState<'Todos' | WishCategory>('Todos');
-  const [edit, setEdit] = useState<WishItem | 'new' | { storeUrl: string; category: WishCategory } | null>(null);
+  const [edit, setEdit] = useState<WishItem | 'new' | { storeUrl: string; category: WishCategory; title: string; imageUrl: string } | null>(null);
   const [mode, setMode] = useState<'lista' | 'lojas'>('lista');
   const [view, setView] = useState<WishItem | null>(null);
 
@@ -44,7 +44,7 @@ export function WishesScreen({ ownerId, ownerName }: { ownerId?: string; ownerNa
       <div className="pad mb12">
         <div className="seg">
           <button className={cx(mode === 'lista' && 'on')} onClick={() => setMode('lista')}>{mine ? 'Os meus desejos' : 'Desejos'}</button>
-          <button className={cx(mode === 'lojas' && 'on')} onClick={() => setMode('lojas')}>🛍️ Lojas</button>
+          <button className={cx(mode === 'lojas' && 'on')} onClick={() => setMode('lojas')}>Lojas</button>
         </div>
       </div>
       <div className="chips mb8" role="tablist">
@@ -55,22 +55,23 @@ export function WishesScreen({ ownerId, ownerName }: { ownerId?: string; ownerNa
       <div className="scroll">
         {mode === 'lojas' ? (
           <div style={{ padding: '4px 16px 24px' }}>
-            <p className="t-sub mb12" style={{ padding: '0 4px' }}>Lojas reais em Moçambique para ver ideias de presentes. Toque em "Visitar" e depois guarde o que gostar na sua lista.</p>
+            <p className="t-sub mb12" style={{ padding: '0 4px' }}>Produtos publicados nas lojas. Preço e disponibilidade são confirmados no site de cada vendedor.</p>
             <div className="store-grid">
               {STORES.filter((s) => cat === 'Todos' || s.cats.includes(cat)).map((s) => (
                 <div key={s.url} className="store-card">
-                  <div className="row" style={{ gap: 12 }}>
-                    <span className="store-logo" style={{ background: s.color }}>{s.emoji}</span>
-                    <div className="grow" style={{ minWidth: 0 }}>
-                      <h4>{s.name}</h4>
-                      <p className="t-small truncate">{s.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</p>
+                  <a className="store-image-link" href={s.productUrl} target="_blank" rel="noopener noreferrer" aria-label={`${s.productName} na ${s.name}`}>
+                    <img className="store-product-image" src={s.imageUrl} alt={s.productName} loading="lazy" onError={(e) => e.currentTarget.remove()} />
+                  </a>
+                  <div className="store-content">
+                    <p className="store-name">{s.name}</p>
+                    <h4>{s.productName}</h4>
+                    <p className="store-desc">Preço e estoque no site oficial.</p>
+                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>{s.cats.map((c) => <span key={c} className="tag">{c}</span>)}</div>
+                    <div className="row store-actions" style={{ gap: 8 }}>
+                      <a className="btn sm" style={{ flex: 1, textDecoration: 'none' }} href={s.productUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> {s.productAction}</a>
+                      <a className="btn sm outline" style={{ flex: 1, textDecoration: 'none' }} href={s.url} target="_blank" rel="noopener noreferrer">Visitar loja</a>
+                      {mine && <button className="btn sm outline" style={{ flex: 1 }} onClick={() => setEdit({ storeUrl: s.productUrl, category: cat !== 'Todos' && s.cats.includes(cat) ? cat : s.cats[0], title: s.productName, imageUrl: s.imageUrl })}><Plus size={15} /> Desejo</button>}
                     </div>
-                  </div>
-                  <p className="store-desc">{s.desc}</p>
-                  <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>{s.cats.map((c) => <span key={c} className="tag">{c}</span>)}</div>
-                  <div className="row mt12" style={{ gap: 8 }}>
-                    <a className="btn sm" style={{ flex: 1, textDecoration: 'none' }} href={s.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Visitar</a>
-                    {mine && <button className="btn sm outline" style={{ flex: 1 }} onClick={() => setEdit({ storeUrl: s.url, category: cat !== 'Todos' && s.cats.includes(cat) ? cat : s.cats[0] })}><Plus size={15} /> Desejo</button>}
                   </div>
                 </div>
               ))}
@@ -116,6 +117,8 @@ export function WishesScreen({ ownerId, ownerName }: { ownerId?: string; ownerNa
           item={edit === 'new' || !('id' in edit) ? null : edit}
           defaultCat={edit !== 'new' && !('id' in edit) ? edit.category : cat === 'Todos' ? 'Tecnologia' : cat}
           defaultStore={edit !== 'new' && !('id' in edit) ? edit.storeUrl : ''}
+          defaultTitle={edit !== 'new' && !('id' in edit) ? edit.title : ''}
+          defaultImage={edit !== 'new' && !('id' in edit) ? edit.imageUrl : ''}
           onClose={() => { if (edit !== 'new' && !('id' in edit)) setMode('lista'); setEdit(null); }}
         />
       )}
@@ -134,13 +137,13 @@ export function WishesScreen({ ownerId, ownerName }: { ownerId?: string; ownerNa
   );
 }
 
-function WishEditor({ item, defaultCat, defaultStore = '', onClose }: { item: WishItem | null; defaultCat: WishCategory; defaultStore?: string; onClose: () => void }) {
+function WishEditor({ item, defaultCat, defaultStore = '', defaultTitle = '', defaultImage = '', onClose }: { item: WishItem | null; defaultCat: WishCategory; defaultStore?: string; defaultTitle?: string; defaultImage?: string; onClose: () => void }) {
   const { user } = useApp();
-  const [title, setTitle] = useState(item?.title || '');
+  const [title, setTitle] = useState(item?.title || defaultTitle);
   const [price, setPrice] = useState(item?.price ? String(item.price) : '');
   const [category, setCategory] = useState<WishCategory>(item?.category || defaultCat);
   const [storeUrl, setStoreUrl] = useState(item?.storeUrl || defaultStore);
-  const [img, setImg] = useState(item?.imageUrl || '');
+  const [img, setImg] = useState(item?.imageUrl || defaultImage);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -209,7 +212,7 @@ function WishEditor({ item, defaultCat, defaultStore = '', onClose }: { item: Wi
       <div className="chips" style={{ padding: '6px 0 2px' }}>
         {STORES.map((st) => (
           <button key={st.url} type="button" className={cx('chip', storeUrl.startsWith(st.url.replace(/\/$/, '')) && 'on')} onClick={() => setStoreUrl(st.url)}>
-            {st.emoji} {st.name}
+            {st.name}
           </button>
         ))}
       </div>
