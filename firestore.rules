@@ -1,0 +1,131 @@
+rules_version = '2';
+
+// Bilar Amigo Secreto — regras de segurança do Firestore (versão 3)
+// Publicar: Firebase Console > Firestore Database > Regras > colar este ficheiro > Publicar
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function g(id) { return /databases/$(database)/documents/groups/$(id); }
+    function th(gid, tid) { return /databases/$(database)/documents/groups/$(gid)/threads/$(tid); }
+    function isMember(gid) { return signedIn() && me() in get(g(gid)).data.memberIds; }
+    function isAdmin(gid) { return signedIn() && get(g(gid)).data.adminId == me(); }
+    function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // Pode ver uma conversa: a "geral" é de todos os membros; as outras só dos participantes
+    function canSeeThread(gid, tid) {
+      return (tid == 'geral' && isMember(gid))
+        || (tid != 'geral' && signedIn() && me() in get(th(gid, tid)).data.participants);
+    }
+    // Igual, mas olhando para o estado DEPOIS da escrita (a 1.ª mensagem cria a conversa)
+    function canSeeThreadAfter(gid, tid) {
+      return (tid == 'geral' && isMember(gid))
+        || (tid != 'geral' && signedIn() && me() in getAfter(th(gid, tid)).data.participants);
+    }
+
+    // Perfis
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && me() == uid;
+      allow delete: if false;
+
+      match /notifications/{nid} {
+        allow read, update, delete: if signedIn() && me() == uid;
+        allow create: if signedIn() && request.resource.data.from == me();
+      }
+    }
+
+    // Códigos de convite (código -> grupo)
+    match /codes/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.adminId == me();
+      allow delete: if signedIn() && resource.data.adminId == me();
+      allow update: if false;
+    }
+
+    // Grupos: só os membros veem o grupo
+    match /groups/{gid} {
+      allow read: if signedIn() && me() in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && request.resource.data.adminId == me()
+        && request.resource.data.memberIds == [me()]
+        && request.resource.data.status == 'pending';
+
+      allow update: if signedIn() && (
+        // organizador: sorteio e edição (nunca muda de organizador)
+        (resource.data.adminId == me() && request.resource.data.adminId == resource.data.adminId)
+        // quem entra com o código: acrescenta-se a si próprio, antes do sorteio
+        || (resource.data.status == 'pending'
+            && onlyChanges(['memberIds'])
+            && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+            && me() in request.resource.data.memberIds
+            && request.resource.data.memberIds.size() <= 100)
+        // quem sai do grupo: retira-se a si próprio
+        || (onlyChanges(['memberIds'])
+            && me() in resource.data.memberIds
+            && !(me() in request.resource.data.memberIds)
+            && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1)
+      );
+      allow delete: if signedIn() && resource.data.adminId == me();
+
+      match /members/{mid} {
+        allow read: if isMember(gid);
+        allow create: if signedIn() && mid == me() && me() in getAfter(g(gid)).data.memberIds;
+        allow update: if signedIn() && mid == me();
+        allow delete: if signedIn() && (mid == me() || isAdmin(gid));
+      }
+
+      // Quem tirou quem: só o próprio lê o seu resultado; só o organizador grava
+      match /assignments/{giver} {
+        allow read: if signedIn() && me() == giver;
+        allow create, update: if isAdmin(gid);
+        allow delete: if false;
+      }
+
+      // Conversas: "geral" (grupo todo), "d_..." (privada) e "s..." (amigo secreto)
+      match /threads/{tid} {
+        allow get: if (tid == 'geral' && isMember(gid))
+          || (signedIn() && resource != null && me() in resource.data.participants);
+        allow list: if signedIn() && me() in resource.data.participants;
+
+        allow create: if isMember(gid) && (
+          tid == 'geral'
+          || (me() in request.resource.data.participants && request.resource.data.participants.size() == 2)
+        );
+
+        allow update: if ((tid == 'geral' && isMember(gid)) || (signedIn() && me() in resource.data.participants))
+          && request.resource.data.get('participants', []) == resource.data.get('participants', []);
+
+        allow delete: if false;
+
+        match /messages/{mid} {
+          allow read: if canSeeThread(gid, tid);
+          allow create: if signedIn() && request.resource.data.senderId == me() && canSeeThreadAfter(gid, tid);
+          allow update: if signedIn() && resource.data.senderId == me() && onlyChanges(['deleted', 'text', 'attachment']);
+          allow delete: if false;
+        }
+
+        // Fotos, notas de voz e ficheiros pequenos da conversa
+        match /media/{id} {
+          allow read: if canSeeThread(gid, tid);
+          allow create: if signedIn() && request.resource.data.senderId == me() && canSeeThreadAfter(gid, tid);
+          allow delete: if signedIn() && resource.data.senderId == me();
+          allow update: if false;
+        }
+      }
+    }
+
+    // Listas de desejos (visíveis para quem tem conta; só o dono altera)
+    match /wishlists/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.userId == me();
+      allow update, delete: if signedIn() && resource.data.userId == me();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
