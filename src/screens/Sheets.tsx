@@ -95,25 +95,56 @@ async function inviteImage(g: Group, inviter: string): Promise<Blob | null> {
     x.font = `500 38px ${F}`;
     x.fillStyle = '#bfe9cf';
     x.fillText(occasionText(g), W / 2, 365);
-    // cartão inferior
-    const y = 930;
+    const y = 780;
+    const cardHeight = 490;
     x.fillStyle = 'rgba(255,255,255,.12)';
     x.strokeStyle = 'rgba(255,255,255,.3)';
     x.lineWidth = 2;
     x.beginPath();
-    x.roundRect(90, y, W - 180, 330, 36);
+    x.roundRect(90, y, W - 180, cardHeight, 36);
     x.fill();
     x.stroke();
     x.fillStyle = '#fff';
-    x.font = `500 36px ${F}`;
+    const wrapText = (text: string, maxWidth: number) => {
+      const lines: string[] = [];
+      let line = '';
+      for (const word of text.split(/\s+/)) {
+        const next = line ? `${line} ${word}` : word;
+        if (line && x.measureText(next).width > maxWidth) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = next;
+        }
+      }
+      if (line) lines.push(line);
+      return lines;
+    };
+    x.font = `500 32px ${F}`;
     const info = [`📅 Revelação: ${formatDateShort(g.revealDate)}`];
+    if (g.place) info.push(`📍 Local: ${g.place}`);
     if (g.budget) info.push(`💰 Orçamento: ${formatMoney(g.budget, g.currency)}`);
-    info.forEach((t, k) => x.fillText(t, W / 2, y + 70 + k * 52));
+    let infoY = y + 58;
+    for (const text of info) {
+      for (const line of wrapText(text, W - 240)) {
+        x.fillText(line, W / 2, infoY);
+        infoY += 40;
+      }
+    }
+    const codeLabelY = Math.max(y + 250, infoY + 20);
     x.fillStyle = '#e9c46a';
     x.font = `600 30px ${F}`;
-    x.fillText('CÓDIGO DO GRUPO', W / 2, y + 205);
+    x.fillText('CÓDIGO DO GRUPO', W / 2, codeLabelY);
     x.font = `700 76px ${F}`;
-    x.fillText(g.code.split('').join(' '), W / 2, y + 285);
+    const codeY = codeLabelY + 78;
+    x.fillText(g.code.split('').join(' '), W / 2, codeY);
+    x.fillStyle = '#fff';
+    x.font = `500 24px ${F}`;
+    let linkY = codeY + 48;
+    for (const line of wrapText(inviteLink(g.code), W - 220)) {
+      x.fillText(line, W / 2, linkY);
+      linkY += 30;
+    }
     x.fillStyle = 'rgba(255,255,255,.85)';
     x.font = `italic 400 32px ${F}`;
     x.fillText('Mais do que presentes, são conexões especiais.', W / 2, H - 40);
