@@ -23,4 +23,4 @@ const PHOTO: Record<OccasionKey, string> = {
   outra: 'photos/t1.jpg',
 };
 
-export const groupPhoto = (g: Pick<Group, 'occasion'>) => PHOTO[g.occasion] || PHOTO.amigos;
+export const groupPhoto = (g: Pick<Group, 'occasion'> & Partial<Pick<Group, 'coverImage'>>) => g.coverImage || PHOTO[g.occasion] || PHOTO.amigos;

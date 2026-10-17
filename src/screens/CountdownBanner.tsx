@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CalendarDays, ChevronRight, Shuffle } from 'lucide-react';
 import type { Group } from '../types';
 import { useApp } from '../state';
-import { countdown, formatDateShort, todayIso, urgency, urgencyText } from '../utils/format';
+import { countdown, formatDateShort, urgency, urgencyText } from '../utils/format';
 import { groupPhoto } from '../utils/occasions';
 
 export function useTick(ms = 1000) {
@@ -51,8 +51,12 @@ function Card({ g }: { g: Group }) {
 export function CountdownBanner() {
   const { user, groups, go } = useApp();
   useTick();
-  const today = todayIso();
-  const drawToday = groups.filter((g) => g.status === 'pending' && g.drawDate && g.drawDate <= today && g.adminId === user.id);
+  const now = Date.now();
+  const drawToday = groups.filter((g) => {
+    if (g.status !== 'pending' || !g.drawDate || g.adminId !== user.id) return false;
+    const scheduledAt = g.drawAt || new Date(`${g.drawDate}T${g.drawTime || '00:00'}:00`).getTime();
+    return Number.isFinite(scheduledAt) && now >= scheduledAt;
+  });
   const upcoming = groups
     .filter((g) => g.revealDate && !countdown(g.revealDate)?.past)
     .sort((a, b) => a.revealDate.localeCompare(b.revealDate));

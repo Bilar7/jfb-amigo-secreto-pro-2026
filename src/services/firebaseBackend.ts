@@ -25,6 +25,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -62,13 +63,18 @@ function mapGroup(id: string, d: DocumentData, members: Member[]): Group {
   return {
     id,
     name: d.name || 'Grupo',
+    coverImage: d.coverImage || '',
     occasion: d.occasion || 'amigos',
     occasionLabel: d.occasionLabel || '',
     place: d.place || '',
     rules: d.rules || '',
     revealDate: d.revealDate || '',
     drawDate: d.drawDate || '',
+    drawTime: d.drawTime || '',
+    drawAt: d.drawAt || 0,
+    timeZone: d.timeZone || '',
     autoDraw: !!d.autoDraw,
+    maxParticipants: d.maxParticipants || 100,
     budget: d.budget ?? 0,
     currency: d.currency || 'MZN',
     code: d.code || '',
@@ -293,19 +299,23 @@ export const firebaseBackend: Backend = {
     const now = Date.now();
     const data = {
       name: input.name.trim(),
+      coverImage: input.coverImage,
       occasion: input.occasion,
       occasionLabel: input.occasionLabel.trim(),
       place: input.place.trim(),
       rules: input.rules.trim(),
       revealDate: input.revealDate,
       drawDate: input.drawDate,
+      drawTime: input.drawTime,
+      drawAt: input.drawAt,
+      timeZone: input.timeZone,
       autoDraw: input.autoDraw,
+      maxParticipants: input.maxParticipants,
       budget: input.budget,
       currency: 'MZN',
       code,
       adminId: user.id,
       memberIds: [user.id],
-      maxParticipants: 100,
       status: 'pending',
       drawRound: 0,
       createdAt: now,
@@ -318,34 +328,41 @@ export const firebaseBackend: Backend = {
     return mapGroup(gref.id, data, [{ id: user.id, name: user.name, avatar: user.avatar, joinedAt: now }]);
   },
 
+  async updateGroupLimit(groupId, maxParticipants) {
+    await updateDoc(doc(db, 'groups', groupId), { maxParticipants });
+  },
+
   async joinByCode(user, raw) {
     const code = normalizeCode(raw);
     if (code.length < 4) throw new Error('Introduza o código completo do convite.');
     const snap = await getDoc(doc(db, 'codes', code));
     if (!snap.exists()) throw new Error('Código não encontrado. Confirme com o organizador.');
     const { groupId, groupName, adminId } = snap.data() as { groupId: string; groupName: string; adminId: string };
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'groups', groupId), { memberIds: arrayUnion(user.id) });
-    batch.set(doc(db, 'groups', groupId, 'members', user.id), { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt: Date.now() });
-    if (adminId && adminId !== user.id) {
-      batch.set(doc(collection(db, 'users', adminId, 'notifications')), {
+    const groupRef = doc(db, 'groups', groupId);
+    const memberRef = doc(db, 'groups', groupId, 'members', user.id);
+    const joinedAt = Date.now();
+    const notificationRef = adminId && adminId !== user.id ? doc(collection(db, 'users', adminId, 'notifications')) : null;
+    await runTransaction(db, async (transaction) => {
+      const groupSnap = await transaction.get(groupRef);
+      if (!groupSnap.exists()) throw new Error('Grupo não encontrado.');
+      const group = groupSnap.data();
+      const memberIds = (group.memberIds || []) as string[];
+      if (memberIds.includes(user.id)) return;
+      if (group.status !== 'pending') throw new Error('Este grupo já foi sorteado e não aceita novos participantes.');
+      const maxParticipants = Number(group.maxParticipants) || 100;
+      if (memberIds.length >= maxParticipants) throw new Error(`Este grupo já atingiu o limite de ${maxParticipants} participantes.`);
+      transaction.update(groupRef, { memberIds: arrayUnion(user.id) });
+      transaction.set(memberRef, { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt });
+      if (notificationRef) transaction.set(notificationRef, {
         title: 'Novo participante',
-        message: `${user.name} entrou no grupo "${groupName}".`,
+        message: `${user.name} entrou no grupo "${group.name || groupName}".`,
         type: 'group',
         groupId,
         read: false,
-        createdAt: Date.now(),
+        createdAt: joinedAt,
         from: user.id,
       });
-    }
-    try {
-      await batch.commit();
-    } catch (e) {
-      if ((e as { code?: string }).code === 'permission-denied') {
-        throw new Error('Não foi possível entrar: o sorteio deste grupo já foi feito ou o grupo foi apagado.');
-      }
-      throw e;
-    }
+    });
     return { groupId, groupName };
   },
 

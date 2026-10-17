@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Volume2, VolumeX, Camera, ChevronRight, CircleHelp, Gift, Loader2, Lock, LogOut, Mail, Phone, ShieldCheck, User as UserIcon, Users } from 'lucide-react';
+import { Bell, Volume2, VolumeX, Camera, ChevronRight, CircleHelp, Gift, Loader2, Lock, LogOut, Mail, Moon, Phone, ShieldCheck, Sun, User as UserIcon, Users } from 'lucide-react';
 import { backend } from '../services/backend';
 import { friendlyError } from '../services/errors';
 import { avatarFromFile } from '../services/media';
+import { makeAvatar } from '../utils/avatar';
 import { useApp } from '../state';
 import { Avatar, Empty, Field, bg, confirmDialog, cx, photo, toast } from '../ui/kit';
 import { formatRelative } from '../utils/format';
@@ -11,7 +12,7 @@ import { sound } from '../utils/sound';
 import { TopBar } from './common';
 
 export function ProfileScreen() {
-  const { user, go, notifications } = useApp();
+  const { user, go, notifications, darkMode, setDarkMode } = useApp();
   const unread = notifications.filter((n) => !n.read).length;
   const [, force] = useState(0);
   useEffect(() => {
@@ -52,6 +53,14 @@ export function ProfileScreen() {
             <ChevronRight size={20} color="#33443b" />
           </button>
         ))}
+        <button className="menu-item" onClick={() => setDarkMode(!darkMode)} aria-pressed={darkMode}>
+          {darkMode ? <Sun size={22} className="lead" /> : <Moon size={22} className="lead" />}
+          <div className="grow">
+            <h3>Modo escuro</h3>
+            <p className="t-small">{darkMode ? 'Ativado neste aparelho' : 'Desativado neste aparelho'}</p>
+          </div>
+          <span className={cx('theme-toggle', darkMode && 'on')} aria-hidden="true"><i /></span>
+        </button>
         <button className="menu-item" onClick={() => { sound.setMuted(!sound.isMuted()); if (!sound.isMuted()) sound.message(); force((n) => n + 1); }}>
           {sound.isMuted() ? <VolumeX size={22} className="lead" /> : <Volume2 size={22} className="lead" />}
           <div className="grow">
@@ -73,6 +82,7 @@ export function AccountScreen() {
   const [name, setName] = useState(user.name);
   const [phone, setPhone] = useState(user.phone);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
 
@@ -82,6 +92,7 @@ export function AccountScreen() {
     if (!f) return;
     try {
       setAvatar(await avatarFromFile(f));
+      setRemoveAvatar(false);
     } catch (err) {
       toast(friendlyError(err), 'error');
     }
@@ -92,8 +103,9 @@ export function AccountScreen() {
     try {
       const patch: { name?: string; avatar?: string; phone?: string } = { name: name.trim(), phone: phone.trim() };
       if (avatar) patch.avatar = avatar;
+      else if (removeAvatar) patch.avatar = '';
       await backend.updateProfile(user.id, patch);
-      const merged = { ...user, name: name.trim(), avatar: avatar || user.avatar, hasPhoto: !!avatar || user.hasPhoto };
+      const merged = { ...user, name: name.trim(), avatar: avatar || (removeAvatar ? makeAvatar(name.trim()) : user.avatar), hasPhoto: removeAvatar ? false : !!avatar || user.hasPhoto };
       await Promise.all(groups.map((g) => backend.syncMemberProfile(g.id, merged).catch(() => {})));
       toast('Perfil atualizado.');
       back();
@@ -109,13 +121,14 @@ export function AccountScreen() {
       <div className="scroll pad" style={{ paddingBottom: 28 }}>
         <div className="center" style={{ margin: '10px 0 22px' }}>
           <button onClick={() => file.current?.click()} style={{ position: 'relative', display: 'inline-block' }} aria-label="Mudar fotografia">
-            <Avatar src={avatar || user.avatar} size={96} />
+            <Avatar src={avatar || (removeAvatar ? makeAvatar(name.trim()) : user.avatar)} size={96} />
             <span style={{ position: 'absolute', right: 0, bottom: 0, width: 32, height: 32, borderRadius: '50%', background: '#0f5a3b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '3px solid #fff' }}>
               <Camera size={15} />
             </span>
           </button>
           <input ref={file} type="file" accept="image/*" hidden onChange={pick} />
           <p className="t-small mt8">Toque para mudar a fotografia</p>
+          {(user.hasPhoto || avatar) && !removeAvatar && <button className="t-link mt8" onClick={() => { setAvatar(null); setRemoveAvatar(true); }}>Remover foto e usar avatar automático</button>}
         </div>
         <label className="label">Nome</label>
         <Field icon={UserIcon} value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
@@ -203,7 +216,7 @@ export function PrivacyScreen() {
 }
 
 const FAQ: [string, string][] = [
-  ['Como convido pessoas?', 'Abra o grupo e toque em "Convidar". Pode partilhar o link pelo WhatsApp ou enviar o código de 6 letras. Quem receber entra com "Entrar com código de convite".'],
+  ['Como convido pessoas?', 'Abra o grupo e toque em "Convidar". Pode partilhar o link pelo WhatsApp ou enviar o código BAS com quatro números e B no final. Quem receber entra com "Entrar com código de convite".'],
   ['Quem faz o sorteio?', 'O organizador (quem criou o grupo), quando já houver pelo menos 3 participantes. Todos recebem uma notificação e cada um vê apenas o seu amigo secreto.'],
   ['Como falo com o meu amigo secreto sem ele saber quem sou?', 'Depois do sorteio, abra "Ver Sorteio" e toque em "Enviar mensagem anónima". O seu nome aparece como "Amigo Secreto 🎭".'],
   ['As mensagens do grupo chegam a todos?', 'Sim. O chat do grupo funciona em tempo real como o WhatsApp: todos os membros veem as mensagens, fotos e notas de voz. As conversas privadas só as duas pessoas veem.'],

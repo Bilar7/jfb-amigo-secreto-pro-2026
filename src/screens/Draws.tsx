@@ -53,7 +53,7 @@ export function DrawsScreen() {
                     <img className="thumb" src={groupPhoto(g)} alt="" />
                     <div className="grow" style={{ minWidth: 0 }}>
                       <h3 className="truncate">{g.name}</h3>
-                      <p className="t-small mt4"><Users size={12} style={{ verticalAlign: -1 }} /> {plural(g.members.length, 'membro', 'membros')}{g.drawDate ? ` · sorteio ${formatDateShort(g.drawDate)}` : ''}</p>
+                      <p className="t-small mt4"><Users size={12} style={{ verticalAlign: -1 }} /> {plural(g.members.length, 'membro', 'membros')}{g.drawDate ? ` · sorteio ${formatDateShort(g.drawDate)} às ${g.drawTime || '00:00'}` : ''}</p>
                       <div className="row mt4" style={{ gap: 6 }}>
                         <span className={admin && ready ? 'pill' : 'pill gray'}>{admin ? (ready ? 'Pronto para sortear' : `Faltam ${MIN_MEMBERS - g.members.length} pessoa(s)`) : 'Aguarde o organizador'}</span>
                         {cd && <span className={`cd-pill u-${urgency(g.revealDate)}`}>{cd}</span>}

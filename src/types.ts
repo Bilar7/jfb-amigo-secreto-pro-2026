@@ -27,6 +27,7 @@ export interface Member {
 export interface Group {
   id: string;
   name: string;
+  coverImage: string;
   occasion: OccasionKey;
   /** Texto da ocasião quando é "outra" (ex.: "Despedida da Ana") */
   occasionLabel: string;
@@ -36,8 +37,14 @@ export interface Group {
   revealDate: string;
   /** Dia do sorteio (AAAA-MM-DD, opcional) */
   drawDate: string;
+  /** Hora local do sorteio (HH:mm) */
+  drawTime: string;
+  /** Instante de sorteio calculado no fuso do organizador */
+  drawAt: number;
+  timeZone: string;
   /** Sortear sozinho quando chegar o dia do sorteio */
   autoDraw: boolean;
+  maxParticipants: number;
   budget: number;
   currency: string;
   code: string;

@@ -51,17 +51,23 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.adminId == me()
         && request.resource.data.memberIds == [me()]
+        && request.resource.data.maxParticipants >= 3
+        && request.resource.data.maxParticipants <= 100
         && request.resource.data.status == 'pending';
 
       allow update: if signedIn() && (
         // organizador: sorteio e edição (nunca muda de organizador)
-        (resource.data.adminId == me() && request.resource.data.adminId == resource.data.adminId)
+        (resource.data.adminId == me()
+          && request.resource.data.adminId == resource.data.adminId
+          && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) >= request.resource.data.memberIds.size()
+          && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) >= 3
+          && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) <= 100)
         // quem entra com o código: acrescenta-se a si próprio, antes do sorteio
         || (resource.data.status == 'pending'
             && onlyChanges(['memberIds'])
             && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
             && me() in request.resource.data.memberIds
-            && request.resource.data.memberIds.size() <= 100)
+            && request.resource.data.memberIds.size() <= resource.data.get('maxParticipants', 100))
         // quem sai do grupo: retira-se a si próprio
         || (onlyChanges(['memberIds'])
             && me() in resource.data.memberIds

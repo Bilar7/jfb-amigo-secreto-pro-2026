@@ -6,7 +6,7 @@ import type { Group } from '../types';
 import { useApp } from '../state';
 import { Field, GiftMark, Sheet, toast } from '../ui/kit';
 import { formatDateShort, formatMoney, inviteLink } from '../utils/format';
-import { occasionText } from '../utils/occasions';
+import { groupPhoto, occasionText } from '../utils/occasions';
 
 export function JoinSheet({ open, initialCode, onClose, onJoined }: { open: boolean; initialCode: string; onClose: () => void; onJoined: (gid: string) => void }) {
   const { user, groups } = useApp();
@@ -53,7 +53,9 @@ export function inviteMessage(g: Group, inviter: string): string {
     `🎉 Ocasião: ${occasionText(g)}`,
     `📅 Revelação: ${formatDateShort(g.revealDate)}`,
   ];
+  if (g.drawDate) lines.push(`⏰ Sorteio: ${formatDateShort(g.drawDate)} às ${g.drawTime || '00:00'}${g.timeZone ? ` (${g.timeZone})` : ''}`);
   if (g.place) lines.push(`📍 Local: ${g.place}`);
+  lines.push(`👥 Participantes: ${g.members.length}/${g.maxParticipants || 100}`);
   if (g.budget) lines.push(`💰 Orçamento: ${formatMoney(g.budget, g.currency)}`);
   lines.push('', `👉 Entra pelo link: ${inviteLink(g.code)}`, `🔑 Ou usa o código: *${g.code}*`, '', '_Mais do que presentes, são conexões especiais._ ✨');
   return lines.join('\n');
@@ -70,7 +72,7 @@ async function inviteImage(g: Group, inviter: string): Promise<Blob | null> {
     c.height = H;
     const x = c.getContext('2d')!;
     const img = new Image();
-    img.src = 'photos/splash.jpg';
+    img.src = groupPhoto(g);
     await img.decode();
     const s = Math.max(W / img.width, H / img.height);
     x.drawImage(img, (W - img.width * s) / 2, (H - img.height * s) / 2, img.width * s, img.height * s);
@@ -122,7 +124,9 @@ async function inviteImage(g: Group, inviter: string): Promise<Blob | null> {
     };
     x.font = `500 32px ${F}`;
     const info = [`📅 Revelação: ${formatDateShort(g.revealDate)}`];
+    if (g.drawDate) info.push(`⏰ Sorteio: ${formatDateShort(g.drawDate)} às ${g.drawTime || '00:00'}${g.timeZone ? ` (${g.timeZone})` : ''}`);
     if (g.place) info.push(`📍 Local: ${g.place}`);
+    info.push(`👥 Participantes: ${g.members.length}/${g.maxParticipants || 100}`);
     if (g.budget) info.push(`💰 Orçamento: ${formatMoney(g.budget, g.currency)}`);
     let infoY = y + 58;
     for (const text of info) {

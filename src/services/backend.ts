@@ -15,13 +15,18 @@ export type Unsub = () => void;
 
 export interface NewGroupInput {
   name: string;
+  coverImage: string;
   occasion: OccasionKey;
   occasionLabel: string;
   place: string;
   rules: string;
   revealDate: string;
   drawDate: string;
+  drawTime: string;
+  drawAt: number;
+  timeZone: string;
   autoDraw: boolean;
+  maxParticipants: number;
   budget: number;
 }
 
@@ -51,6 +56,7 @@ export interface Backend {
 
   watchGroups(uid: string, cb: (groups: Group[]) => void, onError?: (e: unknown) => void): Unsub;
   createGroup(user: User, input: NewGroupInput): Promise<Group>;
+  updateGroupLimit(groupId: string, maxParticipants: number): Promise<void>;
   joinByCode(user: User, code: string): Promise<{ groupId: string; groupName: string }>;
   leaveGroup(group: Group, uid: string): Promise<void>;
   deleteGroup(group: Group): Promise<void>;

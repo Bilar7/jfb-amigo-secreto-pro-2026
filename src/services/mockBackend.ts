@@ -56,6 +56,11 @@ const toGroup = (id: string): Group => {
   return {
     ...g,
     id,
+    coverImage: g.coverImage || '',
+    drawTime: g.drawTime || '',
+    drawAt: g.drawAt || 0,
+    timeZone: g.timeZone || '',
+    maxParticipants: g.maxParticipants || 100,
     members: Object.entries(g.members)
       .map(([mid, m]) => ({ id: mid, name: m.name, avatar: m.avatar || makeAvatar(m.name), joinedAt: m.joinedAt }))
       .sort((a, b) => a.joinedAt - b.joinedAt),
@@ -119,12 +124,20 @@ export const mockBackend: Backend = {
     save();
     return toGroup(id);
   },
+  async updateGroupLimit(groupId, maxParticipants) {
+    const group = db.groups[groupId];
+    if (!group) throw new Error('Grupo não encontrado.');
+    if (maxParticipants < group.memberIds.length || maxParticipants > 100) throw new Error('O limite deve cobrir os membros atuais e não pode passar de 100.');
+    group.maxParticipants = maxParticipants;
+    save();
+  },
   async joinByCode(user, raw) {
     const code = normalizeCode(raw);
     const id = Object.keys(db.groups).find((g) => db.groups[g].code === code);
     if (!id) throw new Error('Código não encontrado. Confirme com o organizador.');
     const g = db.groups[id];
     if (g.status === 'drawn') throw new Error('O sorteio deste grupo já foi feito.');
+    if (!g.memberIds.includes(user.id) && g.memberIds.length >= g.maxParticipants) throw new Error(`Este grupo já atingiu o limite de ${g.maxParticipants} participantes.`);
     if (!g.memberIds.includes(user.id)) g.memberIds.push(user.id);
     g.members[user.id] = { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt: Date.now() };
     save();

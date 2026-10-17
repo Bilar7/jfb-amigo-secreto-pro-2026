@@ -47,6 +47,22 @@ export function useChatRows(): ChatRow[] {
           }
         }
       }
+      for (const m of g.members) {
+        if (m.id === user.id) continue;
+        const ref = refs.direct(g, user.id, m.id);
+        const thread = mine.find((t) => t.id === ref.id);
+        if (thread?.count) continue;
+        rows.push({
+          key: `${g.id}/${ref.id}`,
+          ref,
+          group: g,
+          thread,
+          title: m.name,
+          subtitle: g.name,
+          avatar: m.avatar,
+          tag: 'Privado',
+        });
+      }
     }
     return rows.sort((a, b) => (b.thread?.lastAt || b.group.createdAt / 1e3) - (a.thread?.lastAt || a.group.createdAt / 1e3));
   }, [groups, threads, assignments, user.id]);

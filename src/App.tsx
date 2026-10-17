@@ -53,6 +53,21 @@ const NAV = [
 
 export default function App() {
   const desktop = useDesktop();
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      return localStorage.getItem('bilar_theme') === 'dark';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
+    try {
+      localStorage.setItem('bilar_theme', darkMode ? 'dark' : 'light');
+    } catch {
+      /* preferência apenas neste aparelho */
+    }
+  }, [darkMode]);
   const [splash, setSplash] = useState<'show' | 'fading' | 'gone'>('show');
   const [authReady, setAuthReady] = useState(false);
   const [uid, setUid] = useState<string | null>(null);
@@ -217,6 +232,8 @@ export default function App() {
             notifications,
             myWishes,
             chatError,
+            darkMode,
+            setDarkMode,
             route,
             depth: stack.length,
             go,
@@ -227,7 +244,7 @@ export default function App() {
             openShare: setSharing,
           }
         : null,
-    [user, groups, groupsReady, threads, assignments, notifications, myWishes, chatError, route, stack.length, go, tab, back, replace],
+    [user, groups, groupsReady, threads, assignments, notifications, myWishes, chatError, darkMode, route, stack.length, go, tab, back, replace],
   );
 
   const totalUnread = useMemo(() => {
@@ -236,21 +253,31 @@ export default function App() {
     return threads.filter((t) => gids.has(t.groupId)).reduce((n, t) => n + unreadOf(t, uid), 0);
   }, [threads, groups, uid]);
 
-  /* Dia do sorteio: o organizador sorteia sozinho (se ativou "automático");
-     os outros membros avisam o organizador uma vez por dia. */
+  const [schedulerNow, setSchedulerNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setSchedulerNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  /* A agenda usa a hora local guardada; o app do organizador precisa estar aberto. */
   const autoDone = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!user) return;
     const today = todayIso();
     for (const g of groups) {
-      if (g.status !== 'pending' || !g.drawDate || g.drawDate > today || autoDone.current.has(g.id)) continue;
+      if (g.status !== 'pending' || !g.drawDate || autoDone.current.has(g.id)) continue;
+      const scheduledAt = g.drawAt || new Date(`${g.drawDate}T${g.drawTime || '00:00'}:00`).getTime();
+      if (!Number.isFinite(scheduledAt) || schedulerNow < scheduledAt) continue;
       if (g.adminId === user.id) {
         if (g.autoDraw && g.members.length >= 3) {
           autoDone.current.add(g.id);
           backend
             .runDraw(g)
             .then(() => toast(`Sorteio automático feito em "${g.name}"! 🎉`))
-            .catch((e) => toast(friendlyError(e), 'error'));
+            .catch((e) => {
+              autoDone.current.delete(g.id);
+              toast(friendlyError(e), 'error');
+            });
         }
       } else {
         autoDone.current.add(g.id);
@@ -269,7 +296,7 @@ export default function App() {
         }
       }
     }
-  }, [groups, user]);
+  }, [groups, user, schedulerNow]);
 
   /* Som quando chega uma mensagem nova */
   const prevUnread = useRef<number | null>(null);
@@ -377,7 +404,7 @@ export default function App() {
 
   return (
     <div className="stage">
-      <div className={cx('app', desktop && uid && user && 'desk')}>
+      <div className={cx('app', desktop && uid && user && 'desk')} data-theme={darkMode ? 'dark' : 'light'}>
         {body}
         {splash !== 'gone' && (
           <div className={cx('splash', splash === 'fading' && 'fade-out')} style={bg(photo('splash'))}>

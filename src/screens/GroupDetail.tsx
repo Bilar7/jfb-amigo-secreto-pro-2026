@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Shuffle, ArrowLeft, CalendarDays, CheckCircle2, Copy, Gift, Heart, Loader2, LogOut, MapPin, MessageCircle, MoreVertical, Share2, Star, Trash2, UserMinus, Wallet } from 'lucide-react';
+import { Shuffle, ArrowLeft, CalendarDays, CheckCircle2, Copy, Gift, Heart, Loader2, LogOut, MapPin, MessageCircle, MoreVertical, Share2, Star, Trash2, UserMinus, Users, Wallet } from 'lucide-react';
 import { backend, threadIds } from '../services/backend';
 import { friendlyError } from '../services/errors';
 import type { Group, Member, ThreadRef } from '../types';
 import { useApp } from '../state';
-import { Avatar, Sheet, bg, confirmDialog, photo, toast } from '../ui/kit';
+import { Avatar, Field, Sheet, bg, confirmDialog, toast } from '../ui/kit';
 import { countdown, formatDateShort, formatMoney, plural } from '../utils/format';
 import { groupPhoto, occasionText } from '../utils/occasions';
 import { TopBar } from './common';
@@ -90,6 +90,9 @@ export function GroupScreen({ id }: { id: string }) {
   const { g, missing } = useGroup(id);
   const [menu, setMenu] = useState(false);
   const [member, setMember] = useState<Member | null>(null);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [limitValue, setLimitValue] = useState('');
+  const [savingLimit, setSavingLimit] = useState(false);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 1000);
@@ -125,11 +128,25 @@ export function GroupScreen({ id }: { id: string }) {
       toast(friendlyError(e), 'error');
     }
   };
+  const saveLimit = async () => {
+    const next = Number(limitValue);
+    if (!Number.isInteger(next) || next < 3 || next > 100) return toast('Escolha um limite entre 3 e 100.', 'error');
+    if (next < g.members.length) return toast(`O grupo já tem ${g.members.length} participantes.`, 'error');
+    setSavingLimit(true);
+    try {
+      await backend.updateGroupLimit(g.id, next);
+      setLimitOpen(false);
+      toast('Limite de participantes atualizado.');
+    } catch (e) {
+      toast(friendlyError(e), 'error');
+    }
+    setSavingLimit(false);
+  };
 
   return (
     <>
       <div className="scroll">
-        <div className="photo-head" style={bg(photo('group'))}>
+        <div className="photo-head" style={bg(groupPhoto(g))}>
           <div className="bar">
             <button className="icon-btn light" onClick={back} aria-label="Voltar"><ArrowLeft size={22} /></button>
             <span className="grow" />
@@ -166,7 +183,8 @@ export function GroupScreen({ id }: { id: string }) {
                 <span className="info-ico"><Shuffle size={19} /></span>
                 <div className="grow">
                   <p className="t-small">Dia do sorteio{g.autoDraw ? ' (automático)' : ''}</p>
-                  <p style={{ fontWeight: 600, fontSize: 14 }}>{formatDateShort(g.drawDate)}</p>
+                  <p style={{ fontWeight: 600, fontSize: 14 }}>{formatDateShort(g.drawDate)} às {g.drawTime || '00:00'}</p>
+                  {g.timeZone && <p className="t-small mt4">Fuso do organizador: {g.timeZone}</p>}
                 </div>
               </div>
             )}
@@ -198,8 +216,9 @@ export function GroupScreen({ id }: { id: string }) {
             <button className="tile" onClick={() => go({ name: 'conv', ref: refs.group(g) })}><MessageCircle size={24} />Chat do Grupo</button>
           </div>
 
-          <div className="row between mt20">
-            <h2 className="t-h2" style={{ fontSize: 14 }}>Membros do Grupo</h2>
+          <div className="row between mt20" style={{ flexWrap: 'wrap' }}>
+            <h2 className="t-h2" style={{ fontSize: 14 }}>Membros ({g.members.length}/{g.maxParticipants})</h2>
+            {isAdmin && g.status === 'pending' && <button className="t-link" onClick={() => { setLimitValue(String(g.maxParticipants)); setLimitOpen(true); }}>Editar limite</button>}
             <button className="t-link" onClick={() => go({ name: 'members', id: g.id })}>Ver todos</button>
           </div>
           <div className="avatars mt12" style={{ flexWrap: 'wrap', rowGap: 6 }}>
@@ -230,6 +249,12 @@ export function GroupScreen({ id }: { id: string }) {
           {!isAdmin && <button className="btn danger" onClick={leave}><LogOut size={18} /> Sair do grupo</button>}
           {isAdmin && <button className="btn danger" onClick={remove}><Trash2 size={18} /> Apagar grupo</button>}
         </div>
+      </Sheet>
+      <Sheet open={limitOpen} onClose={() => setLimitOpen(false)} label="Limite de participantes">
+        <h3 className="t-title">Limite de participantes</h3>
+        <p className="t-sub mt4">O grupo tem {g.members.length} participantes. Escolha um limite entre esse total e 100.</p>
+        <Field className="mt16" icon={Users} type="number" inputMode="numeric" min={Math.max(3, g.members.length)} max={100} value={limitValue} onChange={(e) => setLimitValue(e.target.value.replace(/\D/g, ''))} aria-label="Limite de participantes" />
+        <button className="btn mt16" onClick={saveLimit} disabled={savingLimit}>{savingLimit ? <Loader2 size={20} className="spin" /> : 'Guardar limite'}</button>
       </Sheet>
       <MemberSheet g={g} m={member} onClose={() => setMember(null)} />
     </>

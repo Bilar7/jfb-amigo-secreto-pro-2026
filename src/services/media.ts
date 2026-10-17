@@ -88,6 +88,14 @@ export function wishlistImageFromFile(file: Blob): Promise<string> {
   return compressImage(file, { maxDim: 900, quality: 0.74, limit: 140 * 1024 }).then((r) => blobToDataUrl(r.blob));
 }
 
+export function groupImageFromFile(file: Blob): Promise<string> {
+  return compressImage(file, { maxDim: 1200, quality: 0.8, limit: 240 * 1024 }).then((r) => blobToDataUrl(r.blob));
+}
+
+export function chatWallpaperFromFile(file: Blob): Promise<string> {
+  return compressImage(file, { maxDim: 1600, quality: 0.8, limit: 300 * 1024 }).then((r) => blobToDataUrl(r.blob));
+}
+
 function mediaDuration(file: Blob, kind: 'audio' | 'video'): Promise<number | undefined> {
   return new Promise((resolve) => {
     const el = document.createElement(kind);

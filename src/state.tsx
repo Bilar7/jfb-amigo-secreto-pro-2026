@@ -30,6 +30,8 @@ export interface AppState {
   notifications: AppNotification[];
   myWishes: WishItem[];
   chatError: string;
+  darkMode: boolean;
+  setDarkMode: (enabled: boolean) => void;
   route: Route;
   depth: number;
   go: (r: Route) => void;

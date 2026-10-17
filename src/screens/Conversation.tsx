@@ -1,8 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Camera, Check, CheckCheck, Clock, Copy, FileText, Image as ImageIcon, Loader2, Lock, Mic, MoreVertical, Paperclip, Pause, Play, Plus, SendHorizontal, Smile, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Camera, Check, CheckCheck, Clock, Copy, FileText, Image as ImageIcon, Loader2, Lock, Mic, Palette, MoreVertical, Paperclip, Pause, Play, Plus, SendHorizontal, Smile, Trash2, X } from 'lucide-react';
 import { backend } from '../services/backend';
 import { friendlyError } from '../services/errors';
-import { VOICE_MAX_SECONDS, VoiceRecorder, blobToDataUrl, prepareFile } from '../services/media';
+import { VOICE_MAX_SECONDS, VoiceRecorder, blobToDataUrl, chatWallpaperFromFile, prepareFile } from '../services/media';
 import type { Message, ThreadRef } from '../types';
 import { useApp } from '../state';
 import { Avatar, Sheet, confirmDialog, cx, toast } from '../ui/kit';
@@ -19,6 +19,14 @@ const colorFor = (id: string) => {
   return NAME_COLORS[h % NAME_COLORS.length];
 };
 const EMOJIS = '😀 😂 🥰 😍 😘 😊 😉 😎 🤩 🥳 😅 🤗 🤔 🤫 😮 😢 😭 😡 👍 👏 🙏 💪 👌 🤝 ❤️ 💚 💛 🔥 ✨ 🎉 🎁 🎂 🎈 🎊 🌟 💐 🍰 ☕ 📦 🛍️ 💸 😜 🙈 👀 💯 ✅ 🎭 🥂'.split(' ');
+const WALLPAPERS = [
+  { name: 'Padrão', value: '' },
+  { name: 'Menta', value: 'color:#e8f1e9' },
+  { name: 'Pôr do sol', value: 'color:#f3e9df' },
+  { name: 'Noite', value: 'color:#142019' },
+  { name: 'Folhas', value: 'photo:photos/t1.jpg' },
+  { name: 'Festa', value: 'photo:photos/t3.jpg' },
+];
 
 /* ------------------------------ Anexos ------------------------------ */
 function useMedia(ref: ThreadRef, mediaId?: string, eager = true) {
@@ -152,6 +160,12 @@ export function ConversationScreen({ threadRef }: { threadRef: ThreadRef }) {
   const [membersOpen, setMembersOpen] = useState(false);
   const [memberSheet, setMemberSheet] = useState<string | null>(null);
   const [sending, setSending] = useState('');
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const wallpaperKey = `bilar_wallpaper_${threadRef.groupId}_${threadRef.id}`;
+  const [wallpaper, setWallpaper] = useState(() => {
+    try { return localStorage.getItem(wallpaperKey) || ''; } catch { return ''; }
+  });
+  const wallpaperFile = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
@@ -272,6 +286,33 @@ export function ConversationScreen({ threadRef }: { threadRef: ThreadRef }) {
     const ok = await confirmDialog({ title: 'Apagar mensagem?', message: 'A mensagem é apagada para todos.', confirm: 'Apagar', danger: true });
     if (ok) backend.deleteMessage(threadRef, m).catch((e) => toast(friendlyError(e), 'error'));
   };
+  const saveWallpaper = (value: string) => {
+    setWallpaper(value);
+    try {
+      if (value) localStorage.setItem(wallpaperKey, value);
+      else localStorage.removeItem(wallpaperKey);
+    } catch {
+      toast('Não foi possível guardar a aparência neste aparelho.', 'error');
+    }
+  };
+  const chooseWallpaper = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      saveWallpaper(`image:${await chatWallpaperFromFile(file)}`);
+      toast('Fundo atualizado apenas neste aparelho.');
+    } catch (error) {
+      toast(friendlyError(error), 'error');
+    }
+  };
+  const wallpaperStyle: React.CSSProperties = wallpaper.startsWith('color:')
+    ? { background: wallpaper.slice(6) }
+    : wallpaper.startsWith('photo:')
+      ? { backgroundImage: `url("${wallpaper.slice(6)}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }
+      : wallpaper.startsWith('image:')
+        ? { backgroundImage: `url("${wallpaper.slice(6)}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }
+        : {};
 
   /* Lista de mensagens com separadores de dia */
   const rows: React.ReactNode[] = [];
@@ -350,10 +391,12 @@ export function ConversationScreen({ threadRef }: { threadRef: ThreadRef }) {
         {threadRef.kind === 'group' && (
           <button className="icon-btn" onClick={() => setMembersOpen(true)} aria-label="Membros do grupo"><MoreVertical size={20} /></button>
         )}
+        <button className="icon-btn" onClick={() => setAppearanceOpen(true)} aria-label="Aparência do chat"><Palette size={19} /></button>
       </header>
 
       <div
         className="conv-body"
+        style={wallpaperStyle}
         ref={bodyRef}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -415,6 +458,22 @@ export function ConversationScreen({ threadRef }: { threadRef: ThreadRef }) {
             {!selected.text && selected.senderId !== user.id && <p className="t-sub">Sem ações para esta mensagem.</p>}
           </div>
         )}
+      </Sheet>
+
+      <Sheet open={appearanceOpen} onClose={() => setAppearanceOpen(false)} label="Aparência do chat">
+        <h3 className="t-title">Aparência do chat</h3>
+        <p className="t-sub mt4">O fundo é salvo só neste aparelho.</p>
+        <div className="wallpaper-grid">
+          {WALLPAPERS.map((option) => (
+            <button key={option.name} type="button" className="wallpaper-choice" aria-pressed={wallpaper === option.value} onClick={() => saveWallpaper(option.value)}>
+              <span className="wallpaper-swatch" style={option.value.startsWith('photo:') ? { backgroundImage: `url("${option.value.slice(6)}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : option.value.startsWith('color:') ? { background: option.value.slice(6) } : { background: 'var(--chat-bg)' }} />
+              {option.name}
+            </button>
+          ))}
+        </div>
+        <input ref={wallpaperFile} type="file" accept="image/*" hidden onChange={chooseWallpaper} />
+        <button className="btn outline mt16" onClick={() => wallpaperFile.current?.click()}><ImageIcon size={18} /> Escolher foto do aparelho</button>
+        {wallpaper && <button className="btn outline mt8" onClick={() => saveWallpaper('')}>Restaurar fundo padrão</button>}
       </Sheet>
 
       <Sheet open={membersOpen} onClose={() => setMembersOpen(false)} label="Membros">
