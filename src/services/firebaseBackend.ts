@@ -153,14 +153,14 @@ export const firebaseBackend: Backend = {
     );
   },
 
-  async signUp({ name, identifier, password, accountType }) {
+  async signUp({ name, identifier, password, accountType, avatar }) {
     const { email, phone } = identifierToEmail(identifier);
     await setPersistence(auth, browserLocalPersistence);
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await fbUpdateProfile(cred.user, { displayName: name.trim() });
     await setDoc(
       doc(db, 'users', cred.user.uid),
-      { name: name.trim(), email: phone ? '' : email, phone, accountType, avatar: '', createdAt: Date.now() },
+      { name: name.trim(), email: phone ? '' : email, phone, accountType, avatar: avatar || '', createdAt: Date.now() },
       { merge: true },
     );
   },
@@ -187,7 +187,7 @@ export const firebaseBackend: Backend = {
             email: cred.user.email || '',
             phone: '',
             accountType: 'pessoal',
-            avatar: '',
+            avatar: cred.user.photoURL || '',
             createdAt: Date.now(),
           },
           { merge: true },

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, Camera, Eye, EyeOff, Loader2, Lock, Mail, User as UserIcon } from 'lucide-react';
 import { backend } from '../services/backend';
 import { friendlyError } from '../services/errors';
 import type { AccountType } from '../types';
-import { Field, Logo, Sheet, bg, cx, photo, toast } from '../ui/kit';
+import { Avatar, Field, Logo, Sheet, bg, cx, photo, toast } from '../ui/kit';
+import { avatarFromFile } from '../services/media';
+import { makeAvatar } from '../utils/avatar';
 
 function GoogleIcon() {
   return (
@@ -126,11 +128,24 @@ export function Register({ onLogin }: { onLogin: () => void }) {
   const [id, setId] = useState('');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
+  const [avatar, setAvatar] = useState('');
   const [show, setShow] = useState(false);
   const [show2, setShow2] = useState(false);
   const [terms, setTerms] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const avatarFile = React.useRef<HTMLInputElement>(null);
+
+  const chooseAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setAvatar(await avatarFromFile(file));
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,7 +156,7 @@ export function Register({ onLogin }: { onLogin: () => void }) {
     if (!terms) return toast('Aceite os Termos e a Política de Privacidade para continuar.', 'error');
     setBusy(true);
     try {
-      await backend.signUp({ name, identifier: id, password: pw, accountType: type });
+      await backend.signUp({ name, identifier: id, password: pw, accountType: type, avatar: avatar || undefined });
       toast(`Bem-vindo(a), ${name.trim().split(' ')[0]}! 🎁`);
     } catch (err) {
       toast(friendlyError(err), 'error');
@@ -166,6 +181,15 @@ export function Register({ onLogin }: { onLogin: () => void }) {
                 {t.label}
               </button>
             ))}
+          </div>
+          <div className="profile-photo-register">
+            <Avatar src={avatar || makeAvatar(name.trim() || 'Bilar')} size={72} alt="Prévia da foto de perfil" />
+            <div className="grow">
+              <p className="label">Foto de perfil <span className="t-small">(opcional)</span></p>
+              <p className="t-small">Podes adicionar agora ou depois em Minha Conta.</p>
+              <input ref={avatarFile} type="file" accept="image/*" hidden onChange={chooseAvatar} />
+              <button type="button" className="btn outline sm mt8" onClick={() => avatarFile.current?.click()}><Camera size={16} /> {avatar ? 'Trocar foto' : 'Adicionar foto'}</button>
+            </div>
           </div>
           <Field className="mt20" icon={UserIcon} placeholder={TYPES.find((t) => t.key === type)!.name} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
           <Field className="mt12" icon={Mail} placeholder="Email ou número de telefone" value={id} onChange={(e) => setId(e.target.value)} autoComplete="username" />

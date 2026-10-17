@@ -313,6 +313,8 @@ input::placeholder, textarea::placeholder { color: #9aa8a0; }
 .theme-toggle i { width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .18s; }
 .theme-toggle.on { background: var(--g600); }
 .theme-toggle.on i { transform: translateX(18px); }
+.profile-photo-register { display: flex; align-items: center; gap: 14px; margin: 18px 0 2px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.profile-photo-register .label { margin: 0 0 4px; }
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #111915;

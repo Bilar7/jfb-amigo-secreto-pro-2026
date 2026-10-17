@@ -80,11 +80,11 @@ export const mockBackend: Backend = {
       cb(u ? { id, name: u.name, email: u.email, phone: u.phone, accountType: u.accountType, avatar: u.avatar || makeAvatar(u.name), hasPhoto: !!u.avatar } : null);
     });
   },
-  async signUp({ name, identifier, password, accountType }) {
+  async signUp({ name, identifier, password, accountType, avatar }) {
     const { email, phone } = identifierToEmail(identifier);
     if (Object.values(db.users).some((u) => u.email === email)) throw { code: 'auth/email-already-in-use' };
     const id = 'u' + Math.random().toString(36).slice(2, 8);
-    db.users[id] = { name, email, phone, password, accountType, avatar: '' };
+    db.users[id] = { name, email, phone, password, accountType, avatar: avatar || '' };
     save();
     setUid(id);
   },

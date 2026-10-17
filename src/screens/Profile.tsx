@@ -127,7 +127,8 @@ export function AccountScreen() {
             </span>
           </button>
           <input ref={file} type="file" accept="image/*" hidden onChange={pick} />
-          <p className="t-small mt8">Toque para mudar a fotografia</p>
+          <button className="btn outline sm mt8" onClick={() => file.current?.click()}><Camera size={16} /> {avatar ? 'Trocar prévia' : 'Escolher foto de perfil'}</button>
+          {avatar && <p className="t-small mt8">Foto pronta. Toque em Guardar alterações para aplicar.</p>}
           {(user.hasPhoto || avatar) && !removeAvatar && <button className="t-link mt8" onClick={() => { setAvatar(null); setRemoveAvatar(true); }}>Remover foto e usar avatar automático</button>}
         </div>
         <label className="label">Nome</label>

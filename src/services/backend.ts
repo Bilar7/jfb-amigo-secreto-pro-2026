@@ -35,6 +35,7 @@ export interface SignUpInput {
   identifier: string;
   password: string;
   accountType: AccountType;
+  avatar?: string;
 }
 
 export interface OutgoingPayload {
