@@ -137,7 +137,8 @@ export const mockBackend: Backend = {
     if (!id) throw new Error('Código não encontrado. Confirme com o organizador.');
     const g = db.groups[id];
     if (g.status === 'drawn') throw new Error('O sorteio deste grupo já foi feito.');
-    if (!g.memberIds.includes(user.id) && g.memberIds.length >= g.maxParticipants) throw new Error(`Este grupo já atingiu o limite de ${g.maxParticipants} participantes.`);
+    const maxParticipants = g.maxParticipants || 100;
+    if (!g.memberIds.includes(user.id) && g.memberIds.length >= maxParticipants) throw new Error(`Este grupo já atingiu o limite de ${maxParticipants} participantes.`);
     if (!g.memberIds.includes(user.id)) g.memberIds.push(user.id);
     g.members[user.id] = { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt: Date.now() };
     save();

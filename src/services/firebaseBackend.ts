@@ -25,7 +25,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -338,31 +337,29 @@ export const firebaseBackend: Backend = {
     const snap = await getDoc(doc(db, 'codes', code));
     if (!snap.exists()) throw new Error('Código não encontrado. Confirme com o organizador.');
     const { groupId, groupName, adminId } = snap.data() as { groupId: string; groupName: string; adminId: string };
-    const groupRef = doc(db, 'groups', groupId);
-    const memberRef = doc(db, 'groups', groupId, 'members', user.id);
     const joinedAt = Date.now();
-    const notificationRef = adminId && adminId !== user.id ? doc(collection(db, 'users', adminId, 'notifications')) : null;
-    await runTransaction(db, async (transaction) => {
-      const groupSnap = await transaction.get(groupRef);
-      if (!groupSnap.exists()) throw new Error('Grupo não encontrado.');
-      const group = groupSnap.data();
-      const memberIds = (group.memberIds || []) as string[];
-      if (memberIds.includes(user.id)) return;
-      if (group.status !== 'pending') throw new Error('Este grupo já foi sorteado e não aceita novos participantes.');
-      const maxParticipants = Number(group.maxParticipants) || 100;
-      if (memberIds.length >= maxParticipants) throw new Error(`Este grupo já atingiu o limite de ${maxParticipants} participantes.`);
-      transaction.update(groupRef, { memberIds: arrayUnion(user.id) });
-      transaction.set(memberRef, { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt });
-      if (notificationRef) transaction.set(notificationRef, {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'groups', groupId), { memberIds: arrayUnion(user.id) });
+    batch.set(doc(db, 'groups', groupId, 'members', user.id), { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt });
+    if (adminId && adminId !== user.id) {
+      batch.set(doc(collection(db, 'users', adminId, 'notifications')), {
         title: 'Novo participante',
-        message: `${user.name} entrou no grupo "${group.name || groupName}".`,
+        message: `${user.name} entrou no grupo "${groupName}".`,
         type: 'group',
         groupId,
         read: false,
         createdAt: joinedAt,
         from: user.id,
       });
-    });
+    }
+    try {
+      await batch.commit();
+    } catch (e) {
+      if ((e as { code?: string }).code === 'permission-denied') {
+        throw new Error('Não foi possível entrar: o sorteio já foi feito, o grupo foi apagado ou atingiu o limite de participantes.');
+      }
+      throw e;
+    }
     return { groupId, groupName };
   },
 
