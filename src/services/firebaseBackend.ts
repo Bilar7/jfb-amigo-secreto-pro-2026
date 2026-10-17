@@ -280,12 +280,16 @@ export const firebaseBackend: Backend = {
 
   async createGroup(user, input) {
     const gref = doc(collection(db, 'groups'));
-    let code = generateCode();
-    for (let i = 0; i < 5; i++) {
-      const taken = await getDoc(doc(db, 'codes', code)).then((s) => s.exists()).catch(() => false);
-      if (!taken) break;
-      code = generateCode();
+    let code = '';
+    for (let i = 0; i < 10; i++) {
+      const candidate = generateCode();
+      const taken = (await getDoc(doc(db, 'codes', candidate))).exists();
+      if (!taken) {
+        code = candidate;
+        break;
+      }
     }
+    if (!code) throw new Error('Não foi possível gerar um código de convite. Tente novamente.');
     const now = Date.now();
     const data = {
       name: input.name.trim(),

@@ -82,9 +82,8 @@ export function setBackend(b: Backend) {
 
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export function generateCode(): string {
-  const bytes = new Uint8Array(6);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+  const number = crypto.getRandomValues(new Uint32Array(1))[0] % 10_000;
+  return `BAS${String(number).padStart(4, '0')}B`;
 }
 export function normalizeCode(raw: string): string {
   return raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
