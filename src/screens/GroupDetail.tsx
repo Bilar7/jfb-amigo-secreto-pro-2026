@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Shuffle, ArrowLeft, CalendarDays, Camera, CheckCircle2, Clock, Coins, Copy, Gift, Heart, ImagePlus, Loader2, LogOut, MapPin, MessageCircle, MoreVertical, PencilLine, Share2, Star, Tag, Trash2, UserMinus, Users, Wallet, X } from 'lucide-react';
+import { Shuffle, ArrowLeft, ArrowRightLeft, CalendarDays, Camera, CheckCircle2, Clock, Coins, Copy, Gift, Heart, ImagePlus, Loader2, LogOut, Mail, MapPin, MessageCircle, MoreVertical, PencilLine, Share2, Star, Tag, Trash2, UserMinus, UserPlus, Users, Wallet, X } from 'lucide-react';
 import { backend, threadIds } from '../services/backend';
 import { friendlyError } from '../services/errors';
 import { groupImageFromFile } from '../services/media';
@@ -48,18 +48,45 @@ export const refs = {
 
 export function MemberSheet({ g, m, onClose }: { g: Group; m: Member | null; onClose: () => void }) {
   const { user, go } = useApp();
+  const [busy, setBusy] = useState(false);
   if (!m) return null;
   const me = m.id === user.id;
   const remove = async () => {
-    const ok = await confirmDialog({ title: `Remover ${m.name}?`, message: 'A pessoa deixa de ver este grupo.', confirm: 'Remover', danger: true });
+    const ok = await confirmDialog({
+      title: `Remover ${m.name}?`,
+      message: g.status === 'drawn'
+        ? 'A pessoa deixará de ver o grupo e o sorteio atual será invalidado. O organizador terá de sortear novamente.'
+        : 'A pessoa deixará de ver este grupo.',
+      confirm: 'Remover',
+      danger: true,
+    });
     if (!ok) return;
+    setBusy(true);
     try {
-      await backend.leaveGroup(g, m.id);
+      await backend.removeGroupMember(g.id, m.id);
       toast(`${m.name} foi removido(a).`);
       onClose();
     } catch (e) {
       toast(friendlyError(e), 'error');
     }
+    setBusy(false);
+  };
+  const transfer = async () => {
+    const ok = await confirmDialog({
+      title: `Transferir organização para ${m.name}?`,
+      message: 'A pessoa passará a organizar o grupo. Você continuará como participante e poderá sair depois.',
+      confirm: 'Transferir organização',
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await backend.transferGroupAdmin(g.id, m.id);
+      toast(`Agora ${m.name} é o organizador do grupo.`);
+      onClose();
+    } catch (e) {
+      toast(friendlyError(e), 'error');
+    }
+    setBusy(false);
   };
   return (
     <Sheet open onClose={onClose} label={m.name}>
@@ -79,8 +106,11 @@ export function MemberSheet({ g, m, onClose }: { g: Group; m: Member | null; onC
         <button className="btn outline" onClick={() => { onClose(); go({ name: 'wishes', ownerId: m.id, ownerName: me ? undefined : m.name }); }}>
           <Heart size={18} /> Ver lista de desejos
         </button>
-        {g.adminId === user.id && !me && g.status === 'pending' && (
-          <button className="btn danger" onClick={remove}><UserMinus size={18} /> Remover do grupo</button>
+        {g.adminId === user.id && !me && m.id !== g.adminId && (
+          <>
+            <button className="btn outline" onClick={transfer} disabled={busy}><ArrowRightLeft size={18} /> Transferir organização</button>
+            <button className="btn danger" onClick={remove} disabled={busy}><UserMinus size={18} /> Remover do grupo</button>
+          </>
         )}
       </div>
     </Sheet>
@@ -109,7 +139,14 @@ export function GroupScreen({ id }: { id: string }) {
 
   const leave = async () => {
     setMenu(false);
-    const ok = await confirmDialog({ title: 'Sair do grupo?', message: 'Deixa de ver o grupo e o seu chat. Pode voltar a entrar com o código, antes do sorteio.', confirm: 'Sair', danger: true });
+    const ok = await confirmDialog({
+      title: 'Sair do grupo?',
+      message: g.status === 'drawn'
+        ? 'Deixará de ver o grupo e o sorteio atual será invalidado. O organizador terá de sortear novamente.'
+        : 'Deixará de ver este grupo e o respetivo chat. Poderá voltar a entrar com o código se houver vagas.',
+      confirm: 'Sair',
+      danger: true,
+    });
     if (!ok) return;
     try {
       await backend.leaveGroup(g, user.id);
@@ -370,10 +407,31 @@ export function MembersScreen({ id }: { id: string }) {
   const { user, openShare } = useApp();
   const { g, missing } = useGroup(id);
   const [member, setMember] = useState<Member | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [adding, setAdding] = useState(false);
   if (!g) return <GroupMissing missing={missing} />;
+  const addByEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdding(true);
+    try {
+      await backend.addGroupMember(g.id, email);
+      toast('Participante adicionado. Ele receberá uma notificação no app.');
+      setEmail('');
+      setAddOpen(false);
+    } catch (error) {
+      toast(friendlyError(error), 'error');
+    }
+    setAdding(false);
+  };
   return (
     <>
-      <TopBar title={`Membros (${g.members.length})`} right={<button className="btn sm ghost" onClick={() => openShare(g)}><Share2 size={16} /> Convidar</button>} />
+      <TopBar title={`Membros (${g.members.length})`} right={
+        <div className="row" style={{ gap: 6 }}>
+          {g.adminId === user.id && <button className="btn sm ghost" onClick={() => setAddOpen(true)}><UserPlus size={16} /> Adicionar</button>}
+          <button className="btn sm ghost" onClick={() => openShare(g)}><Share2 size={16} /> Convidar</button>
+        </div>
+      } />
       <div className="scroll">
         {g.members.map((m) => (
           <button key={m.id} className="chat-row" onClick={() => setMember(m)}>
@@ -387,6 +445,18 @@ export function MembersScreen({ id }: { id: string }) {
         ))}
       </div>
       <MemberSheet g={g} m={member} onClose={() => setMember(null)} />
+      <Sheet open={addOpen} onClose={() => setAddOpen(false)} label="Adicionar participante por email">
+        <form onSubmit={addByEmail}>
+          <h2 className="t-title">Adicionar participante</h2>
+          <p className="t-sub mt4">Introduza o email associado à conta da pessoa. Não precisa de ter número de telefone.</p>
+          <Field className="mt16" icon={Mail} type="email" autoComplete="email" placeholder="nome@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <p className="t-small mt8">A pessoa deve ter criado uma conta com email para poder receber a notificação e ver o resultado.</p>
+          <button className="btn mt16" disabled={adding || g.members.length >= g.maxParticipants}>
+            {adding ? <Loader2 size={20} className="spin" /> : <><UserPlus size={18} /> Adicionar ao grupo</>}
+          </button>
+          {g.members.length >= g.maxParticipants && <p className="t-small mt8">O grupo atingiu o limite de {g.maxParticipants} participantes.</p>}
+        </form>
+      </Sheet>
     </>
   );
 }

@@ -8,6 +8,7 @@ Bilar DigitalTech Solutions · React + Vite + Firebase (projeto `jfb-amigo-secre
 - Início com os meus grupos, criar grupo (cartaz, ocasião, local, regras, data de revelação e entrega, limite e orçamento) e entrar com código/link.
 - Cada pessoa só vê os grupos que criou ou para onde foi convidada.
 - O organizador pode editar os dados do grupo; as alterações ficam sincronizadas em tempo real para todos os membros.
+- Participantes podem sair; o organizador pode remover participantes, adicionar contas existentes por email e transferir a organização para outro membro antes de sair.
 - Sorteio (mínimo 3): o organizador pode sortear antes do limite; o sorteio automático aguarda que o grupo fique completo. Entradas após o sorteio ficam incluídas quando o organizador o refizer.
 - Notificações personalizadas para os membros quando o sorteio é feito ou refeito.
 - Revelação privada com suspense sonoro e animação de celebração, além da contagem decrescente até ao dia do evento.
@@ -16,7 +17,8 @@ Bilar DigitalTech Solutions · React + Vite + Firebase (projeto `jfb-amigo-secre
 - Perfil: conta, notificações, privacidade, ajuda.
 
 ## ⚠️ Passo obrigatório: publicar as regras novas do Firestore
-O chat foi refeito com uma estrutura nova. **Sem este passo o chat não funciona.** As regras também permitem a edição dos dados pelo organizador e a entrada de novos participantes após um sorteio (que só recebem resultado depois de o organizador refazê-lo).
+O chat foi refeito com uma estrutura nova. **Sem este passo o chat não funciona.** As regras também permitem a edição dos dados pelo organizador, a entrada/remoção de participantes, a transferência da organização e a invalidação do sorteio quando a lista de membros muda.
+Sempre que `firestore.rules` for alterado, publique novamente o ficheiro atualizado no Firebase Console.
 Firebase Console → projeto `jfb-amigo-secreto-pro-2026` → **Firestore Database → Regras** → apagar tudo, colar o conteúdo de `firestore.rules` → **Publicar**.
 
 Confirme também em **Authentication → Sign-in method** que *Email/Palavra-passe* e *Google* estão ativos,

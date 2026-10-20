@@ -20,6 +20,7 @@ import {
   deleteField,
   doc,
   getDoc,
+  getDocs,
   increment,
   limit,
   onSnapshot,
@@ -379,7 +380,10 @@ export const firebaseBackend: Backend = {
     const { groupId, groupName, adminId, status } = snap.data() as { groupId: string; groupName: string; adminId: string; status?: string };
     const joinedAt = Date.now();
     const batch = writeBatch(db);
-    batch.update(doc(db, 'groups', groupId), { memberIds: arrayUnion(user.id) });
+    batch.update(doc(db, 'groups', groupId), {
+      memberIds: arrayUnion(user.id),
+      ...(status === 'drawn' ? { status: 'pending' } : {}),
+    });
     batch.set(doc(db, 'groups', groupId, 'members', user.id), { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt });
     if (adminId && adminId !== user.id) {
       const afterDraw = status === 'drawn';
@@ -407,9 +411,113 @@ export const firebaseBackend: Backend = {
   },
 
   async leaveGroup(group, uid) {
+    if (uid === auth.currentUser?.uid && uid === group.adminId) {
+      throw new Error('Transfira a organização para outro participante antes de sair do grupo.');
+    }
     const batch = writeBatch(db);
-    batch.update(doc(db, 'groups', group.id), { memberIds: arrayRemove(uid) });
+    batch.update(doc(db, 'groups', group.id), {
+      memberIds: arrayRemove(uid),
+      ...(group.status === 'drawn' ? { status: 'pending' } : {}),
+    });
     batch.delete(doc(db, 'groups', group.id, 'members', uid));
+    await batch.commit();
+  },
+
+  async removeGroupMember(groupId, memberId) {
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (!groupSnap.exists()) throw new Error('Grupo não encontrado.');
+    const group = mapGroup(groupId, groupSnap.data(), []);
+    if (group.adminId !== auth.currentUser?.uid) throw new Error('Só o organizador pode remover participantes.');
+    if (memberId === group.adminId) throw new Error('Transfira a organização antes de sair do grupo.');
+    const memberSnap = await getDoc(doc(db, 'groups', groupId, 'members', memberId));
+    if (!memberSnap.exists()) throw new Error('Este participante já não está no grupo.');
+    const batch = writeBatch(db);
+    batch.update(groupRef, {
+      memberIds: arrayRemove(memberId),
+      ...(group.status === 'drawn' ? { status: 'pending' } : {}),
+    });
+    batch.delete(doc(db, 'groups', groupId, 'members', memberId));
+    batch.set(doc(collection(db, 'users', memberId, 'notifications')), {
+      title: 'Removido do grupo',
+      message: `O organizador removeu você do grupo "${group.name}".`,
+      type: 'group',
+      groupId,
+      read: false,
+      createdAt: Date.now(),
+      from: auth.currentUser.uid,
+    });
+    await batch.commit();
+  },
+
+  async addGroupMember(groupId, email) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail.includes('@')) throw new Error('Introduza um email válido.');
+    const matches = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail), limit(1)));
+    const match = matches.docs[0];
+    if (!match) throw new Error('Não há uma conta com esse email. Peça à pessoa para criar uma conta com email e tente novamente.');
+    const userId = match.id;
+    const userData = match.data();
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (!groupSnap.exists()) throw new Error('Grupo não encontrado.');
+    const group = mapGroup(groupId, groupSnap.data(), []);
+    if (group.adminId !== auth.currentUser?.uid) throw new Error('Só o organizador pode adicionar participantes.');
+    if (group.memberIds.includes(userId)) throw new Error('Essa pessoa já faz parte do grupo.');
+    if (group.memberIds.length >= group.maxParticipants) throw new Error(`O grupo já atingiu o limite de ${group.maxParticipants} participantes.`);
+    const memberName = userData.name || 'Participante';
+    const batch = writeBatch(db);
+    batch.update(groupRef, {
+      memberIds: arrayUnion(userId),
+      ...(group.status === 'drawn' ? { status: 'pending' } : {}),
+    });
+    batch.set(doc(db, 'groups', groupId, 'members', userId), {
+      name: memberName,
+      avatar: userData.avatar || makeAvatar(memberName),
+      joinedAt: Date.now(),
+    });
+    batch.set(doc(collection(db, 'users', userId, 'notifications')), {
+      title: 'Você foi adicionado a um grupo 🎁',
+      message: `O organizador adicionou você ao grupo "${group.name}". Abra este aviso para ver o grupo.`,
+      type: 'group',
+      groupId,
+      read: false,
+      createdAt: Date.now(),
+      from: auth.currentUser.uid,
+    });
+    await batch.commit();
+  },
+
+  async transferGroupAdmin(groupId, nextAdminId) {
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (!groupSnap.exists()) throw new Error('Grupo não encontrado.');
+    const group = mapGroup(groupId, groupSnap.data(), []);
+    if (group.adminId !== auth.currentUser?.uid) throw new Error('Só o organizador atual pode transferir a organização.');
+    if (nextAdminId === group.adminId || !group.memberIds.includes(nextAdminId)) {
+      throw new Error('Escolha outro participante atual do grupo.');
+    }
+    const nextMember = await getDoc(doc(db, 'groups', groupId, 'members', nextAdminId));
+    if (!nextMember.exists()) throw new Error('Este participante já não está no grupo.');
+    const batch = writeBatch(db);
+    batch.update(groupRef, { adminId: nextAdminId });
+    if (group.code) {
+      batch.set(doc(db, 'codes', group.code), {
+        adminId: nextAdminId,
+        groupName: group.name,
+        maxParticipants: group.maxParticipants,
+        status: group.status,
+      }, { merge: true });
+    }
+    batch.set(doc(collection(db, 'users', nextAdminId, 'notifications')), {
+      title: 'Você é o novo organizador',
+      message: `A organização do grupo "${group.name}" foi transferida para você.`,
+      type: 'group',
+      groupId,
+      read: false,
+      createdAt: Date.now(),
+      from: auth.currentUser.uid,
+    });
     await batch.commit();
   },
 

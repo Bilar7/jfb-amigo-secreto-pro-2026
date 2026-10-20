@@ -61,6 +61,9 @@ export interface Backend {
   updateGroup(groupId: string, input: NewGroupInput): Promise<void>;
   joinByCode(user: User, code: string): Promise<{ groupId: string; groupName: string }>;
   leaveGroup(group: Group, uid: string): Promise<void>;
+  removeGroupMember(groupId: string, memberId: string): Promise<void>;
+  addGroupMember(groupId: string, email: string): Promise<void>;
+  transferGroupAdmin(groupId: string, adminId: string): Promise<void>;
   deleteGroup(group: Group): Promise<void>;
   syncMemberProfile(groupId: string, user: User): Promise<void>;
   runDraw(group: Group): Promise<void>;

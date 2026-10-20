@@ -144,9 +144,10 @@ export const mockBackend: Backend = {
     if (g.memberIds.includes(user.id)) throw new Error('Já faz parte deste grupo.');
     if (!g.memberIds.includes(user.id) && g.memberIds.length >= maxParticipants) throw new Error(`Este grupo já atingiu o limite de ${maxParticipants} participantes.`);
     if (!g.memberIds.includes(user.id)) g.memberIds.push(user.id);
+    const afterDraw = g.status === 'drawn';
+    if (afterDraw) g.status = 'pending';
     g.members[user.id] = { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt: Date.now() };
     if (g.adminId !== user.id) {
-      const afterDraw = g.status === 'drawn';
       (db.notes[g.adminId] ||= []).unshift({
         id: Math.random().toString(36),
         title: afterDraw ? 'Novo participante após o sorteio' : 'Novo participante',
@@ -164,8 +165,70 @@ export const mockBackend: Backend = {
   },
   async leaveGroup(group, id) {
     const g = db.groups[group.id];
+    if (!g) throw new Error('Grupo não encontrado.');
+    if (id !== uid) throw new Error('Só pode sair do grupo com a sua própria conta.');
+    if (id === g.adminId) throw new Error('Transfira a organização para outro participante antes de sair do grupo.');
     g.memberIds = g.memberIds.filter((x) => x !== id);
     delete g.members[id];
+    if (g.status === 'drawn') g.status = 'pending';
+    save();
+  },
+  async removeGroupMember(groupId, memberId) {
+    const g = db.groups[groupId];
+    if (!g || g.adminId !== uid) throw new Error('Só o organizador pode remover participantes.');
+    if (memberId === g.adminId || !g.memberIds.includes(memberId)) throw new Error('Este participante já não pode ser removido.');
+    g.memberIds = g.memberIds.filter((id) => id !== memberId);
+    delete g.members[memberId];
+    if (g.status === 'drawn') g.status = 'pending';
+    (db.notes[memberId] ||= []).unshift({
+      id: Math.random().toString(36),
+      title: 'Removido do grupo',
+      message: `O organizador removeu você do grupo "${g.name}".`,
+      type: 'group',
+      groupId,
+      read: false,
+      createdAt: Date.now(),
+    });
+    save();
+  },
+  async addGroupMember(groupId, email) {
+    const g = db.groups[groupId];
+    if (!g || g.adminId !== uid) throw new Error('Só o organizador pode adicionar participantes.');
+    const normalizedEmail = email.trim().toLowerCase();
+    const match = Object.entries(db.users).find(([, user]) => user.email.toLowerCase() === normalizedEmail);
+    if (!match) throw new Error('Não há uma conta com esse email. Peça à pessoa para criar uma conta com email e tente novamente.');
+    const [memberId, member] = match;
+    if (g.memberIds.includes(memberId)) throw new Error('Essa pessoa já faz parte do grupo.');
+    if (g.memberIds.length >= (g.maxParticipants || 100)) throw new Error(`O grupo já atingiu o limite de ${g.maxParticipants} participantes.`);
+    const afterDraw = g.status === 'drawn';
+    g.memberIds.push(memberId);
+    g.members[memberId] = { name: member.name, avatar: member.avatar || '', joinedAt: Date.now() };
+    if (afterDraw) g.status = 'pending';
+    (db.notes[memberId] ||= []).unshift({
+      id: Math.random().toString(36),
+      title: 'Você foi adicionado a um grupo 🎁',
+      message: `O organizador adicionou você ao grupo "${g.name}". Abra este aviso para ver o grupo.`,
+      type: 'group',
+      groupId,
+      read: false,
+      createdAt: Date.now(),
+    });
+    save();
+  },
+  async transferGroupAdmin(groupId, adminId) {
+    const g = db.groups[groupId];
+    if (!g || g.adminId !== uid) throw new Error('Só o organizador atual pode transferir a organização.');
+    if (adminId === uid || !g.memberIds.includes(adminId)) throw new Error('Escolha outro participante atual do grupo.');
+    g.adminId = adminId;
+    (db.notes[adminId] ||= []).unshift({
+      id: Math.random().toString(36),
+      title: 'Você é o novo organizador',
+      message: `A organização do grupo "${g.name}" foi transferida para você.`,
+      type: 'group',
+      groupId,
+      read: false,
+      createdAt: Date.now(),
+    });
     save();
   },
   async deleteGroup(group) {

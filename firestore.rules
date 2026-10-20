@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Bilar Amigo Secreto — regras de segurança do Firestore (versão 3)
+// Bilar Amigo Secreto — regras de segurança do Firestore (versão 4)
 // Publicar: Firebase Console > Firestore Database > Regras > colar este ficheiro > Publicar
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -42,12 +42,12 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.adminId == me();
       allow update: if signedIn()
         && resource.data.adminId == me()
-        && request.resource.data.adminId == resource.data.adminId
         && request.resource.data.groupId == resource.data.groupId
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['groupName', 'maxParticipants', 'status'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adminId', 'groupName', 'maxParticipants', 'status'])
         && request.resource.data.groupName == getAfter(g(resource.data.groupId)).data.name
         && request.resource.data.maxParticipants == getAfter(g(resource.data.groupId)).data.maxParticipants
-        && request.resource.data.status == getAfter(g(resource.data.groupId)).data.status;
+        && request.resource.data.status == getAfter(g(resource.data.groupId)).data.status
+        && request.resource.data.adminId == getAfter(g(resource.data.groupId)).data.adminId;
       allow delete: if signedIn() && resource.data.adminId == me();
     }
 
@@ -63,29 +63,36 @@ service cloud.firestore {
         && request.resource.data.status == 'pending';
 
       allow update: if signedIn() && (
-        // organizador: sorteio e edição (nunca muda de organizador)
+        // organizador: sorteio, edição e transferência para um membro atual
         (resource.data.adminId == me()
-          && request.resource.data.adminId == resource.data.adminId
+          && (request.resource.data.adminId == resource.data.adminId
+              || (onlyChanges(['adminId']) && request.resource.data.adminId in resource.data.memberIds))
+          && request.resource.data.adminId in request.resource.data.memberIds
           && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) >= request.resource.data.memberIds.size()
           && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) >= 3
           && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) <= 100)
-        // quem entra com o código: pode participar antes ou depois do sorteio; o organizador pode refazê-lo
+        // entrada por código; após o sorteio, a entrada invalida a ronda atual
         || (resource.data.status in ['pending', 'drawn']
-            && onlyChanges(['memberIds'])
+            && onlyChanges(['memberIds', 'status'])
             && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
             && me() in request.resource.data.memberIds
-            && request.resource.data.memberIds.size() <= resource.data.get('maxParticipants', 100))
+            && request.resource.data.memberIds.size() <= resource.data.get('maxParticipants', 100)
+            && request.resource.data.status == (resource.data.status == 'drawn' ? 'pending' : resource.data.status))
         // quem sai do grupo: retira-se a si próprio
-        || (onlyChanges(['memberIds'])
+        || (onlyChanges(['memberIds', 'status'])
+            && me() != resource.data.adminId
             && me() in resource.data.memberIds
             && !(me() in request.resource.data.memberIds)
-            && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1)
+            && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1
+            && request.resource.data.status == (resource.data.status == 'drawn' ? 'pending' : resource.data.status))
       );
       allow delete: if signedIn() && resource.data.adminId == me();
 
       match /members/{mid} {
         allow read: if isMember(gid);
-        allow create: if signedIn() && mid == me() && me() in getAfter(g(gid)).data.memberIds;
+        allow create: if signedIn()
+          && mid in getAfter(g(gid)).data.memberIds
+          && (mid == me() || isAdmin(gid));
         allow update: if signedIn() && mid == me();
         allow delete: if signedIn() && (mid == me() || isAdmin(gid));
       }
