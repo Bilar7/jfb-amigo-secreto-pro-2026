@@ -57,6 +57,7 @@ const toGroup = (id: string): Group => {
     ...g,
     id,
     coverImage: g.coverImage || '',
+    deliveryDate: g.deliveryDate || '',
     drawTime: g.drawTime || '',
     drawAt: g.drawAt || 0,
     timeZone: g.timeZone || '',
@@ -124,11 +125,14 @@ export const mockBackend: Backend = {
     save();
     return toGroup(id);
   },
-  async updateGroupLimit(groupId, maxParticipants) {
+  async updateGroup(groupId, input) {
     const group = db.groups[groupId];
     if (!group) throw new Error('Grupo não encontrado.');
-    if (maxParticipants < group.memberIds.length || maxParticipants > 100) throw new Error('O limite deve cobrir os membros atuais e não pode passar de 100.');
-    group.maxParticipants = maxParticipants;
+    if (uid !== group.adminId) throw new Error('Só o organizador pode editar este grupo.');
+    if (!Number.isInteger(input.maxParticipants) || input.maxParticipants < group.memberIds.length || input.maxParticipants > 100) {
+      throw new Error('O limite deve cobrir os membros atuais e não pode passar de 100.');
+    }
+    Object.assign(group, input);
     save();
   },
   async joinByCode(user, raw) {
@@ -136,11 +140,25 @@ export const mockBackend: Backend = {
     const id = Object.keys(db.groups).find((g) => db.groups[g].code === code);
     if (!id) throw new Error('Código não encontrado. Confirme com o organizador.');
     const g = db.groups[id];
-    if (g.status === 'drawn') throw new Error('O sorteio deste grupo já foi feito.');
     const maxParticipants = g.maxParticipants || 100;
+    if (g.memberIds.includes(user.id)) throw new Error('Já faz parte deste grupo.');
     if (!g.memberIds.includes(user.id) && g.memberIds.length >= maxParticipants) throw new Error(`Este grupo já atingiu o limite de ${maxParticipants} participantes.`);
     if (!g.memberIds.includes(user.id)) g.memberIds.push(user.id);
     g.members[user.id] = { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt: Date.now() };
+    if (g.adminId !== user.id) {
+      const afterDraw = g.status === 'drawn';
+      (db.notes[g.adminId] ||= []).unshift({
+        id: Math.random().toString(36),
+        title: afterDraw ? 'Novo participante após o sorteio' : 'Novo participante',
+        message: afterDraw
+          ? `${user.name} entrou no grupo "${g.name}" depois do sorteio. Refaça o sorteio para incluir esta pessoa.`
+          : `${user.name} entrou no grupo "${g.name}".`,
+        type: 'group',
+        groupId: id,
+        read: false,
+        createdAt: Date.now(),
+      });
+    }
     save();
     return { groupId: id, groupName: g.name };
   },
@@ -163,13 +181,17 @@ export const mockBackend: Backend = {
     }
   },
   async runDraw(group) {
+    if (uid !== group.adminId) throw new Error('Só o organizador pode fazer o sorteio.');
+    if (group.members.length < 3) throw new Error('São precisos pelo menos 3 participantes para sortear.');
     const pairs = drawCycle(group.members.map((m) => m.id));
     const g = db.groups[group.id];
     g.status = 'drawn';
     g.drawRound += 1;
     Object.entries(pairs).forEach(([a, b]) => {
       db.assignments[`${group.id}/${a}`] = b;
-      (db.notes[a] ||= []).unshift({ id: Math.random().toString(36), title: 'Sorteio realizado! 🎁', message: `O sorteio do grupo "${g.name}" foi feito.`, type: 'draw', groupId: group.id, read: false, createdAt: Date.now() });
+      const name = g.members[a]?.name || 'participante';
+      const organizer = g.members[g.adminId]?.name || 'O organizador';
+      (db.notes[a] ||= []).unshift({ id: Math.random().toString(36), title: g.drawRound > 1 ? 'O sorteio foi refeito! 🎁' : 'O sorteio foi realizado! 🎁', message: `Olá ${name}! ${organizer} já fez o sorteio do grupo "${g.name}". Abra este aviso e toque em "Ver Sorteio" para descobrir quem é o seu amigo secreto.`, type: 'draw', groupId: group.id, read: false, createdAt: Date.now() });
     });
     save();
   },

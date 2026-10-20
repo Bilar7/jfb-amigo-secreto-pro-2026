@@ -40,8 +40,15 @@ service cloud.firestore {
     match /codes/{code} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.adminId == me();
+      allow update: if signedIn()
+        && resource.data.adminId == me()
+        && request.resource.data.adminId == resource.data.adminId
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['groupName', 'maxParticipants', 'status'])
+        && request.resource.data.groupName == getAfter(g(resource.data.groupId)).data.name
+        && request.resource.data.maxParticipants == getAfter(g(resource.data.groupId)).data.maxParticipants
+        && request.resource.data.status == getAfter(g(resource.data.groupId)).data.status;
       allow delete: if signedIn() && resource.data.adminId == me();
-      allow update: if false;
     }
 
     // Grupos: só os membros veem o grupo
@@ -62,8 +69,8 @@ service cloud.firestore {
           && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) >= request.resource.data.memberIds.size()
           && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) >= 3
           && request.resource.data.get('maxParticipants', resource.data.get('maxParticipants', 100)) <= 100)
-        // quem entra com o código: acrescenta-se a si próprio, antes do sorteio
-        || (resource.data.status == 'pending'
+        // quem entra com o código: pode participar antes ou depois do sorteio; o organizador pode refazê-lo
+        || (resource.data.status in ['pending', 'drawn']
             && onlyChanges(['memberIds'])
             && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
             && me() in request.resource.data.memberIds

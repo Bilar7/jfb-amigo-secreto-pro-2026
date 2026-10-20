@@ -35,6 +35,8 @@ export interface Group {
   rules: string;
   /** AAAA-MM-DD */
   revealDate: string;
+  /** Dia previsto para a entrega do presente (opcional) */
+  deliveryDate: string;
   /** Dia do sorteio (AAAA-MM-DD, opcional) */
   drawDate: string;
   /** Hora local do sorteio (HH:mm) */

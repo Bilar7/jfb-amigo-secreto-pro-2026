@@ -21,6 +21,7 @@ export interface NewGroupInput {
   place: string;
   rules: string;
   revealDate: string;
+  deliveryDate: string;
   drawDate: string;
   drawTime: string;
   drawAt: number;
@@ -57,7 +58,7 @@ export interface Backend {
 
   watchGroups(uid: string, cb: (groups: Group[]) => void, onError?: (e: unknown) => void): Unsub;
   createGroup(user: User, input: NewGroupInput): Promise<Group>;
-  updateGroupLimit(groupId: string, maxParticipants: number): Promise<void>;
+  updateGroup(groupId: string, input: NewGroupInput): Promise<void>;
   joinByCode(user: User, code: string): Promise<{ groupId: string; groupName: string }>;
   leaveGroup(group: Group, uid: string): Promise<void>;
   deleteGroup(group: Group): Promise<void>;

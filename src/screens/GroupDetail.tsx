@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Shuffle, ArrowLeft, CalendarDays, CheckCircle2, Copy, Gift, Heart, Loader2, LogOut, MapPin, MessageCircle, MoreVertical, Share2, Star, Trash2, UserMinus, Users, Wallet } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Shuffle, ArrowLeft, CalendarDays, Camera, CheckCircle2, Clock, Coins, Copy, Gift, Heart, ImagePlus, Loader2, LogOut, MapPin, MessageCircle, MoreVertical, PencilLine, Share2, Star, Tag, Trash2, UserMinus, Users, Wallet, X } from 'lucide-react';
 import { backend, threadIds } from '../services/backend';
 import { friendlyError } from '../services/errors';
+import { groupImageFromFile } from '../services/media';
+import type { NewGroupInput } from '../services/backend';
 import type { Group, Member, ThreadRef } from '../types';
 import { useApp } from '../state';
 import { Avatar, Field, Sheet, bg, confirmDialog, toast } from '../ui/kit';
 import { countdown, formatDateShort, formatMoney, plural } from '../utils/format';
-import { groupPhoto, occasionText } from '../utils/occasions';
+import { groupPhoto, OCCASIONS, occasionText } from '../utils/occasions';
 import { TopBar } from './common';
 import { CountdownBoxes } from './CountdownBanner';
 
@@ -90,9 +92,10 @@ export function GroupScreen({ id }: { id: string }) {
   const { g, missing } = useGroup(id);
   const [menu, setMenu] = useState(false);
   const [member, setMember] = useState<Member | null>(null);
-  const [limitOpen, setLimitOpen] = useState(false);
-  const [limitValue, setLimitValue] = useState('');
-  const [savingLimit, setSavingLimit] = useState(false);
+  const [editForm, setEditForm] = useState<NewGroupInput | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const coverFile = useRef<HTMLInputElement>(null);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 1000);
@@ -128,19 +131,60 @@ export function GroupScreen({ id }: { id: string }) {
       toast(friendlyError(e), 'error');
     }
   };
-  const saveLimit = async () => {
-    const next = Number(limitValue);
-    if (!Number.isInteger(next) || next < 3 || next > 100) return toast('Escolha um limite entre 3 e 100.', 'error');
-    if (next < g.members.length) return toast(`O grupo já tem ${g.members.length} participantes.`, 'error');
-    setSavingLimit(true);
+  const openEditor = () => {
+    setEditForm({
+      name: g.name,
+      coverImage: g.coverImage,
+      occasion: g.occasion,
+      occasionLabel: g.occasionLabel,
+      place: g.place,
+      rules: g.rules,
+      revealDate: g.revealDate,
+      deliveryDate: g.deliveryDate,
+      drawDate: g.drawDate,
+      drawTime: g.drawTime || '19:00',
+      drawAt: g.drawAt,
+      timeZone: g.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'local',
+      autoDraw: g.autoDraw,
+      maxParticipants: g.maxParticipants,
+      budget: g.budget,
+    });
+    setMenu(false);
+  };
+  const updateEditForm = <K extends keyof NewGroupInput>(key: K, value: NewGroupInput[K]) => {
+    setEditForm((current) => current ? { ...current, [key]: value } : current);
+  };
+  const chooseCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !editForm) return;
+    setImageBusy(true);
     try {
-      await backend.updateGroupLimit(g.id, next);
-      setLimitOpen(false);
-      toast('Limite de participantes atualizado.');
-    } catch (e) {
-      toast(friendlyError(e), 'error');
+      updateEditForm('coverImage', await groupImageFromFile(file));
+    } catch (error) {
+      toast(friendlyError(error), 'error');
     }
-    setSavingLimit(false);
+    setImageBusy(false);
+  };
+  const saveGroup = async () => {
+    if (!editForm) return;
+    if (editForm.name.trim().length < 2) return toast('Dê um nome ao grupo.', 'error');
+    if (editForm.occasion === 'outra' && !editForm.occasionLabel.trim()) return toast('Escreva qual é a ocasião.', 'error');
+    if (!editForm.revealDate) return toast('Escolha a data da revelação.', 'error');
+    if (editForm.drawDate && editForm.drawDate > editForm.revealDate) return toast('O sorteio tem de ser antes (ou no dia) da revelação.', 'error');
+    if (!Number.isInteger(editForm.maxParticipants) || editForm.maxParticipants < Math.max(3, g.members.length) || editForm.maxParticipants > 100) {
+      return toast(`Escolha um limite entre ${Math.max(3, g.members.length)} e 100 participantes.`, 'error');
+    }
+    setSavingEdit(true);
+    try {
+      const drawAt = editForm.drawDate ? new Date(`${editForm.drawDate}T${editForm.drawTime || '00:00'}:00`).getTime() : 0;
+      await backend.updateGroup(g.id, { ...editForm, drawAt, autoDraw: !!editForm.drawDate && editForm.autoDraw });
+      setEditForm(null);
+      toast('Grupo atualizado. As alterações já estão disponíveis para todos os participantes.');
+    } catch (error) {
+      toast(friendlyError(error), 'error');
+    }
+    setSavingEdit(false);
   };
 
   return (
@@ -178,6 +222,15 @@ export function GroupScreen({ id }: { id: string }) {
                 <p style={{ fontWeight: 600, fontSize: 14 }}>{g.budget ? formatMoney(g.budget, g.currency) : 'Livre'}</p>
               </div>
             </div>
+            {g.deliveryDate && (
+              <div className="info-line" style={{ borderTop: '1px solid #eef2ef' }}>
+                <span className="info-ico"><Gift size={19} /></span>
+                <div className="grow">
+                  <p className="t-small">Data de entrega do presente</p>
+                  <p style={{ fontWeight: 600, fontSize: 14 }}>{formatDateShort(g.deliveryDate)}</p>
+                </div>
+              </div>
+            )}
             {g.drawDate && g.status === 'pending' && (
               <div className="info-line" style={{ borderTop: '1px solid #eef2ef' }}>
                 <span className="info-ico"><Shuffle size={19} /></span>
@@ -218,7 +271,7 @@ export function GroupScreen({ id }: { id: string }) {
 
           <div className="row between mt20" style={{ flexWrap: 'wrap' }}>
             <h2 className="t-h2" style={{ fontSize: 14 }}>Membros ({g.members.length}/{g.maxParticipants})</h2>
-            {isAdmin && g.status === 'pending' && <button className="t-link" onClick={() => { setLimitValue(String(g.maxParticipants)); setLimitOpen(true); }}>Editar limite</button>}
+            {isAdmin && <button className="t-link" onClick={openEditor}>Editar grupo</button>}
             <button className="t-link" onClick={() => go({ name: 'members', id: g.id })}>Ver todos</button>
           </div>
           <div className="avatars mt12" style={{ flexWrap: 'wrap', rowGap: 6 }}>
@@ -238,7 +291,7 @@ export function GroupScreen({ id }: { id: string }) {
             <button className="icon-btn" onClick={() => { navigator.clipboard?.writeText(g.code); toast('Código copiado.'); }} aria-label="Copiar código"><Copy size={19} /></button>
             <button className="btn sm" onClick={() => openShare(g)}><Share2 size={16} /> Convidar</button>
           </div>
-          {g.status === 'drawn' && <p className="t-small mt8">O sorteio já foi feito: novas pessoas só entram se o organizador refizer o sorteio.</p>}
+          {g.status === 'drawn' && <p className="t-small mt8">Quem entrar depois do sorteio só recebe um resultado quando o organizador o refizer.</p>}
           {admin && !isAdmin && <p className="t-small mt12">Organizador: {admin.name}</p>}
         </div>
       </div>
@@ -250,11 +303,63 @@ export function GroupScreen({ id }: { id: string }) {
           {isAdmin && <button className="btn danger" onClick={remove}><Trash2 size={18} /> Apagar grupo</button>}
         </div>
       </Sheet>
-      <Sheet open={limitOpen} onClose={() => setLimitOpen(false)} label="Limite de participantes">
-        <h3 className="t-title">Limite de participantes</h3>
-        <p className="t-sub mt4">O grupo tem {g.members.length} participantes. Escolha um limite entre esse total e 100.</p>
-        <Field className="mt16" icon={Users} type="number" inputMode="numeric" min={Math.max(3, g.members.length)} max={100} value={limitValue} onChange={(e) => setLimitValue(e.target.value.replace(/\D/g, ''))} aria-label="Limite de participantes" />
-        <button className="btn mt16" onClick={saveLimit} disabled={savingLimit}>{savingLimit ? <Loader2 size={20} className="spin" /> : 'Guardar limite'}</button>
+      <Sheet open={!!editForm} onClose={() => setEditForm(null)} label="Editar grupo">
+        {editForm && (
+          <div className="scroll" style={{ maxHeight: '78vh', padding: '0 2px 12px' }}>
+            <h2 className="t-title">Editar grupo</h2>
+            <p className="t-sub mt4">As alterações são sincronizadas com todos os participantes.</p>
+
+            <label className="label mt16">Nome do grupo</label>
+            <Field icon={Tag} value={editForm.name} onChange={(e) => updateEditForm('name', e.target.value)} maxLength={50} />
+
+            <label className="label mt16">Cartaz / foto do grupo</label>
+            <input ref={coverFile} type="file" accept="image/*" hidden onChange={chooseCover} />
+            <button type="button" className="group-cover" onClick={() => coverFile.current?.click()} disabled={imageBusy}>
+              {editForm.coverImage ? <img src={editForm.coverImage} alt="Pré-visualização da foto do grupo" /> : <><ImagePlus size={24} /><span>{imageBusy ? 'A preparar foto…' : 'Adicionar foto do grupo'}</span></>}
+              {editForm.coverImage && <span className="group-cover-action"><Camera size={15} /> Trocar foto</span>}
+            </button>
+            {editForm.coverImage && <button className="t-link mt8" onClick={() => updateEditForm('coverImage', '')}><X size={14} /> Remover foto</button>}
+
+            <label className="label mt16">Ocasião</label>
+            <label className="field">
+              <Gift size={19} />
+              <select value={editForm.occasion} onChange={(e) => updateEditForm('occasion', e.target.value as NewGroupInput['occasion'])}>
+                {OCCASIONS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+              </select>
+            </label>
+            {editForm.occasion === 'outra' && <Field className="mt8" icon={PencilLine} placeholder="Escreva a ocasião" value={editForm.occasionLabel} onChange={(e) => updateEditForm('occasionLabel', e.target.value)} maxLength={40} />}
+
+            <label className="label mt16">Local do encontro</label>
+            <Field icon={MapPin} value={editForm.place} onChange={(e) => updateEditForm('place', e.target.value)} maxLength={80} />
+
+            <label className="label mt16">Regras e orientações</label>
+            <label className="field area"><textarea value={editForm.rules} onChange={(e) => updateEditForm('rules', e.target.value)} maxLength={600} /></label>
+
+            <label className="label mt16">Data da revelação</label>
+            <Field icon={CalendarDays} type="date" value={editForm.revealDate} onChange={(e) => updateEditForm('revealDate', e.target.value)} />
+            <label className="label mt16">Data de entrega do presente</label>
+            <Field icon={Gift} type="date" value={editForm.deliveryDate} onChange={(e) => updateEditForm('deliveryDate', e.target.value)} />
+
+            <label className="label mt16">Data do sorteio (opcional)</label>
+            <Field icon={Shuffle} type="date" max={editForm.revealDate || undefined} value={editForm.drawDate} onChange={(e) => updateEditForm('drawDate', e.target.value)} />
+            {!!editForm.drawDate && (
+              <>
+                <label className="label mt8">Hora local do sorteio</label>
+                <Field icon={Clock} type="time" value={editForm.drawTime} onChange={(e) => updateEditForm('drawTime', e.target.value)} />
+                <label className="check mt8">
+                  <input type="checkbox" checked={editForm.autoDraw} onChange={(e) => updateEditForm('autoDraw', e.target.checked)} />
+                  <span>Sortear automaticamente só quando o grupo atingir o limite e o app do organizador estiver aberto.</span>
+                </label>
+              </>
+            )}
+
+            <label className="label mt16">Limite de participantes</label>
+            <Field icon={Users} type="number" min={Math.max(3, g.members.length)} max={100} value={editForm.maxParticipants} onChange={(e) => updateEditForm('maxParticipants', Number(e.target.value))} />
+            <label className="label mt16">Orçamento sugerido (MZN)</label>
+            <Field icon={Coins} type="number" min={0} value={editForm.budget} onChange={(e) => updateEditForm('budget', Math.max(0, Number(e.target.value) || 0))} />
+            <button className="btn mt20" onClick={saveGroup} disabled={savingEdit || imageBusy}>{savingEdit ? <Loader2 size={20} className="spin" /> : 'Guardar alterações'}</button>
+          </div>
+        )}
       </Sheet>
       <MemberSheet g={g} m={member} onClose={() => setMember(null)} />
     </>

@@ -59,7 +59,13 @@ export const sound = {
     if (muted) return;
     tone(660, 0, 0.12, 0.06);
   },
-  /** Sorteio revelado */
+  /** Pequena sequência crescente para criar suspense antes da revelação. */
+  suspense() {
+    if (muted) return;
+    [130.81, 146.83, 164.81, 196, 220, 261.63].forEach((f, i) => tone(f, i * 0.28, 0.52, 0.07, 'triangle'));
+    [392, 415].forEach((f, i) => tone(f, 1.25 + i * 0.18, 0.6, 0.035, 'sine'));
+  },
+  /** Celebração depois da revelação */
   reveal() {
     if (muted) return;
     [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.09, 0.6, 0.09, 'triangle'));

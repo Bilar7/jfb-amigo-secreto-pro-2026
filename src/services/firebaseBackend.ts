@@ -68,6 +68,7 @@ function mapGroup(id: string, d: DocumentData, members: Member[]): Group {
     place: d.place || '',
     rules: d.rules || '',
     revealDate: d.revealDate || '',
+    deliveryDate: d.deliveryDate || '',
     drawDate: d.drawDate || '',
     drawTime: d.drawTime || '',
     drawAt: d.drawAt || 0,
@@ -304,6 +305,7 @@ export const firebaseBackend: Backend = {
       place: input.place.trim(),
       rules: input.rules.trim(),
       revealDate: input.revealDate,
+      deliveryDate: input.deliveryDate,
       drawDate: input.drawDate,
       drawTime: input.drawTime,
       drawAt: input.drawAt,
@@ -321,14 +323,52 @@ export const firebaseBackend: Backend = {
     };
     const batch = writeBatch(db);
     batch.set(gref, data);
-    batch.set(doc(db, 'codes', code), { groupId: gref.id, groupName: data.name, adminId: user.id, createdAt: now });
+    batch.set(doc(db, 'codes', code), {
+      groupId: gref.id,
+      groupName: data.name,
+      adminId: user.id,
+      maxParticipants: data.maxParticipants,
+      status: data.status,
+      createdAt: now,
+    });
     batch.set(doc(db, 'groups', gref.id, 'members', user.id), { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt: now });
     await batch.commit();
     return mapGroup(gref.id, data, [{ id: user.id, name: user.name, avatar: user.avatar, joinedAt: now }]);
   },
 
-  async updateGroupLimit(groupId, maxParticipants) {
-    await updateDoc(doc(db, 'groups', groupId), { maxParticipants });
+  async updateGroup(groupId, input) {
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (!groupSnap.exists()) throw new Error('Grupo não encontrado.');
+    const code = groupSnap.data().code as string | undefined;
+    const batch = writeBatch(db);
+    batch.update(groupRef, {
+      name: input.name.trim(),
+      coverImage: input.coverImage,
+      occasion: input.occasion,
+      occasionLabel: input.occasionLabel.trim(),
+      place: input.place.trim(),
+      rules: input.rules.trim(),
+      revealDate: input.revealDate,
+      deliveryDate: input.deliveryDate,
+      drawDate: input.drawDate,
+      drawTime: input.drawTime,
+      drawAt: input.drawAt,
+      timeZone: input.timeZone,
+      autoDraw: input.autoDraw,
+      maxParticipants: input.maxParticipants,
+      budget: input.budget,
+    });
+    if (code) {
+      batch.set(doc(db, 'codes', code), {
+        groupId,
+        groupName: input.name.trim(),
+        adminId: auth.currentUser?.uid || '',
+        maxParticipants: input.maxParticipants,
+        status: groupSnap.data().status,
+      }, { merge: true });
+    }
+    await batch.commit();
   },
 
   async joinByCode(user, raw) {
@@ -336,15 +376,18 @@ export const firebaseBackend: Backend = {
     if (code.length < 4) throw new Error('Introduza o código completo do convite.');
     const snap = await getDoc(doc(db, 'codes', code));
     if (!snap.exists()) throw new Error('Código não encontrado. Confirme com o organizador.');
-    const { groupId, groupName, adminId } = snap.data() as { groupId: string; groupName: string; adminId: string };
+    const { groupId, groupName, adminId, status } = snap.data() as { groupId: string; groupName: string; adminId: string; status?: string };
     const joinedAt = Date.now();
     const batch = writeBatch(db);
     batch.update(doc(db, 'groups', groupId), { memberIds: arrayUnion(user.id) });
     batch.set(doc(db, 'groups', groupId, 'members', user.id), { name: user.name, avatar: user.hasPhoto ? user.avatar : '', joinedAt });
     if (adminId && adminId !== user.id) {
+      const afterDraw = status === 'drawn';
       batch.set(doc(collection(db, 'users', adminId, 'notifications')), {
-        title: 'Novo participante',
-        message: `${user.name} entrou no grupo "${groupName}".`,
+        title: afterDraw ? 'Novo participante após o sorteio' : 'Novo participante',
+        message: afterDraw
+          ? `${user.name} entrou no grupo "${groupName}" depois do sorteio. Refaça o sorteio para incluir esta pessoa.`
+          : `${user.name} entrou no grupo "${groupName}".`,
         type: 'group',
         groupId,
         read: false,
@@ -356,7 +399,7 @@ export const firebaseBackend: Backend = {
       await batch.commit();
     } catch (e) {
       if ((e as { code?: string }).code === 'permission-denied') {
-        throw new Error('Não foi possível entrar: o sorteio já foi feito, o grupo foi apagado ou atingiu o limite de participantes.');
+        throw new Error('Não foi possível entrar: as condições do grupo mudaram. Confirme se ainda há vagas e tente novamente.');
       }
       throw e;
     }
@@ -382,16 +425,27 @@ export const firebaseBackend: Backend = {
   },
 
   async runDraw(group) {
+    if (group.members.length < 3) throw new Error('São precisos pelo menos 3 participantes para sortear.');
     const pairs = drawCycle(group.members.map((m) => m.id));
     const round = (group.drawRound || 0) + 1;
     const now = Date.now();
     const batch = writeBatch(db);
     batch.update(doc(db, 'groups', group.id), { status: 'drawn', drawRound: round, drawnAt: now });
+    if (group.code) {
+      batch.set(doc(db, 'codes', group.code), {
+        groupId: group.id,
+        groupName: group.name,
+        adminId: auth.currentUser?.uid || '',
+        maxParticipants: group.maxParticipants,
+        status: 'drawn',
+      }, { merge: true });
+    }
+    const organizer = group.members.find((m) => m.id === group.adminId);
     Object.entries(pairs).forEach(([giver, receiver]) => {
       batch.set(doc(db, 'groups', group.id, 'assignments', giver), { assignedTo: receiver, round, createdAt: now });
       batch.set(doc(collection(db, 'users', giver, 'notifications')), {
-        title: round > 1 ? 'Novo sorteio realizado' : 'Sorteio realizado! 🎁',
-        message: `O sorteio do grupo "${group.name}" foi feito. Abra o Sorteio para descobrir o seu amigo secreto.`,
+        title: round > 1 ? 'O sorteio foi refeito! 🎁' : 'O sorteio foi realizado! 🎁',
+        message: `Olá ${group.members.find((m) => m.id === giver)?.name || 'participante'}! ${organizer?.name || 'O organizador'} já fez o sorteio do grupo "${group.name}". Abra este aviso e toque em "Ver Sorteio" para descobrir quem é o seu amigo secreto.`,
         type: 'draw',
         groupId: group.id,
         read: false,

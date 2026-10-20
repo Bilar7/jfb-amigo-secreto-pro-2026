@@ -12,6 +12,7 @@ import { normalizeCode } from './services/backend';
 import { todayIso } from './utils/format';
 import { friendlyError } from './services/errors';
 import type { AppNotification, Group, Thread, User, WishItem } from './types';
+import { MIN_MEMBERS } from './types';
 import { AppCtx, TABS, unreadOf, type AppState, type Route } from './state';
 import { Avatar, Feedback, Logo, bg, cx, photo, toast } from './ui/kit';
 import { Login, Register } from './screens/Auth';
@@ -86,6 +87,7 @@ export default function App() {
   const [joinOpen, setJoinOpen] = useState<{ code: string } | null>(null);
   const [sharing, setSharing] = useState<Group | null>(null);
   const pendingJoin = useRef<string>('');
+  const seenDrawNotifications = useRef<Set<string>>(new Set());
   const [codeAsk, setCodeAsk] = useState(false);
   const [codeInput, setCodeInput] = useState('');
 
@@ -178,7 +180,19 @@ export default function App() {
     return () => unsubs.forEach((u) => u());
   }, [uid, drawnKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => (uid ? backend.watchNotifications(uid, setNotifications) : undefined), [uid]);
+  useEffect(() => {
+    seenDrawNotifications.current.clear();
+    if (!uid) return;
+    let initialSnapshot = true;
+    return backend.watchNotifications(uid, (list) => {
+      if (!initialSnapshot && list.some((n) => n.type === 'draw' && !seenDrawNotifications.current.has(n.id))) {
+        toast('🎁 Sorteio realizado! Abra Notificações para ver quem é o seu amigo secreto.');
+      }
+      list.forEach((n) => seenDrawNotifications.current.add(n.id));
+      initialSnapshot = false;
+      setNotifications(list);
+    });
+  }, [uid]);
   useEffect(() => (uid ? backend.watchWishlist(uid, setMyWishes) : undefined), [uid]);
 
   /* Convite pendente depois de entrar */
@@ -269,7 +283,7 @@ export default function App() {
       const scheduledAt = g.drawAt || new Date(`${g.drawDate}T${g.drawTime || '00:00'}:00`).getTime();
       if (!Number.isFinite(scheduledAt) || schedulerNow < scheduledAt) continue;
       if (g.adminId === user.id) {
-        if (g.autoDraw && g.members.length >= 3) {
+        if (g.autoDraw && g.members.length >= MIN_MEMBERS && g.members.length >= g.maxParticipants) {
           autoDone.current.add(g.id);
           backend
             .runDraw(g)
@@ -466,4 +480,3 @@ export default function App() {
     </div>
   );
 }
-

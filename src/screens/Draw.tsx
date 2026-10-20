@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronRight, Gift, Heart, Loader2, MessageCircle, RefreshCw, ScrollText, UserPlus } from 'lucide-react';
 import { backend } from '../services/backend';
 import { friendlyError } from '../services/errors';
@@ -31,6 +31,8 @@ export function DrawScreen({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  const revealTimer = useRef<number | null>(null);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 1000);
@@ -38,6 +40,9 @@ export function DrawScreen({ id }: { id: string }) {
   }, []);
   const revealKey = g ? `bilar_rev_${g.id}_${g.drawRound}` : '';
   useEffect(() => setRevealed(!!revealKey && lsGet(revealKey) === '1'), [revealKey]);
+  useEffect(() => () => {
+    if (revealTimer.current !== null) window.clearTimeout(revealTimer.current);
+  }, []);
 
   if (!g) return <GroupMissing missing={missing} />;
 
@@ -64,9 +69,15 @@ export function DrawScreen({ id }: { id: string }) {
   };
 
   const reveal = () => {
-    sound.reveal();
-    setRevealed(true);
-    lsSet(revealKey, '1');
+    if (revealing || revealed) return;
+    sound.suspense();
+    setRevealing(true);
+    revealTimer.current = window.setTimeout(() => {
+      sound.reveal();
+      setRevealed(true);
+      setRevealing(false);
+      lsSet(revealKey, '1');
+    }, 2300);
   };
 
   let content;
@@ -98,6 +109,23 @@ export function DrawScreen({ id }: { id: string }) {
         </>
       );
     }
+  } else if (!friend && assignedId === null && isAdmin) {
+    content = (
+      <>
+        <GiftMark size={64} />
+        <h2 className="t-title mt12" style={{ fontSize: 18 }}>Há novos participantes</h2>
+        <p className="t-sub mt8">Refaça o sorteio para incluir todos os membros atuais do grupo.</p>
+        <button className="btn mt20" onClick={run} disabled={busy}>{busy ? <Loader2 size={20} className="spin" /> : <><RefreshCw size={18} /> Refazer sorteio</>}</button>
+      </>
+    );
+  } else if (!friend && assignedId === null) {
+    content = (
+      <>
+        <GiftMark size={64} />
+        <h2 className="t-title mt12" style={{ fontSize: 18 }}>A aguardar novo sorteio</h2>
+        <p className="t-sub mt8">O organizador precisa refazer o sorteio para incluir a sua participação.</p>
+      </>
+    );
   } else if (!friend) {
     content = (
       <>
@@ -108,21 +136,28 @@ export function DrawScreen({ id }: { id: string }) {
   } else {
     content = (
       <>
-        <div className={cx('reveal', !revealed && 'hidden-name')} onClick={!revealed ? reveal : undefined} role={!revealed ? 'button' : undefined}>
+        <div className={cx('reveal', !revealed && 'hidden-name')} onClick={!revealed && !revealing ? reveal : undefined} role={!revealed && !revealing ? 'button' : undefined} aria-busy={revealing}>
           <div className="bgimg" style={bg(photo('draw'))} />
           {!revealed ? (
             <div style={{ padding: '18px 0' }}>
               <GiftMark size={60} light />
-              <p style={{ fontWeight: 700, fontSize: 17, marginTop: 10 }}>Toque para revelar</p>
-              <p style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>Veja sozinho(a): é segredo! 🤫</p>
+              <p style={{ fontWeight: 700, fontSize: 17, marginTop: 10 }}>{revealing ? 'O suspense está no ar…' : 'Toque para revelar'}</p>
+              <p style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>{revealing ? 'Prepare-se para descobrir!' : 'Veja sozinho(a): é segredo! 🤫'}</p>
             </div>
           ) : (
             <div className="flip">
+              <div className="celebration" aria-hidden="true">
+                {Array.from({ length: 24 }, (_, i) => (
+                  <span key={i} style={{ left: `${(i * 37) % 100}%`, animationDelay: `${(i % 8) * 0.08}s`, background: ['#ffd166', '#ef476f', '#06d6a0', '#4cc9f0', '#fff'][i % 5] }} />
+                ))}
+                <b>🎈</b><b>🎉</b><b>🎈</b>
+              </div>
               <p style={{ fontSize: 12, opacity: 0.9 }}>O seu amigo secreto é</p>
               <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0 8px' }}>
                 <Avatar src={friend.avatar} size={76} />
               </div>
               <p style={{ fontSize: 22, fontWeight: 700 }}>{friend.name}</p>
+              <p style={{ fontSize: 14, fontWeight: 700, marginTop: 7 }}>Parabéns! 🎉</p>
               {g.budget > 0 && <p style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>Orçamento sugerido: {formatMoney(g.budget, g.currency)}</p>}
             </div>
           )}

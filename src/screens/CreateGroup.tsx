@@ -27,6 +27,7 @@ export function CreateGroupScreen() {
   const [place, setPlace] = useState('');
   const [rules, setRules] = useState('');
   const [date, setDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
   const [drawDate, setDrawDate] = useState('');
   const [drawTime, setDrawTime] = useState('19:00');
   const [autoDraw, setAutoDraw] = useState(true);
@@ -57,6 +58,7 @@ export function CreateGroupScreen() {
         place,
         rules,
         revealDate: date,
+        deliveryDate,
         drawDate,
         drawTime,
         drawAt,
@@ -134,6 +136,9 @@ export function CreateGroupScreen() {
         <label className="label mt20">Data da Revelação <span className="req">*</span></label>
         <Field icon={CalendarDays} type="date" min={today} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Data da revelação" />
 
+        <label className="label mt20">Data de Entrega do Presente <span className="t-small">(opcional)</span></label>
+        <Field icon={Gift} type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} aria-label="Data de entrega do presente" />
+
         <label className="label mt20">Data do Sorteio <span className="t-small">(opcional)</span></label>
         <Field icon={Shuffle} type="date" min={today} max={date || undefined} value={drawDate} onChange={(e) => setDrawDate(e.target.value)} aria-label="Data do sorteio" />
         {drawDate && (
@@ -143,7 +148,7 @@ export function CreateGroupScreen() {
             <p className="t-small mt8">Fuso do organizador: {Intl.DateTimeFormat().resolvedOptions().timeZone || 'hora local do aparelho'}.</p>
             <label className="check mt12">
               <input type="checkbox" checked={autoDraw} onChange={(e) => setAutoDraw(e.target.checked)} />
-              <span>Sortear automaticamente nesse horário se houver participantes suficientes e o app do organizador estiver aberto.</span>
+              <span>Sortear automaticamente nesse horário só quando o grupo atingir o limite de participantes e o app do organizador estiver aberto.</span>
             </label>
           </>
         )}
