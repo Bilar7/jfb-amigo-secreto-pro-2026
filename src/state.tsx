@@ -32,6 +32,8 @@ export interface AppState {
   chatError: string;
   darkMode: boolean;
   setDarkMode: (enabled: boolean) => void;
+  deviceNotificationsEnabled: boolean;
+  setDeviceNotificationsEnabled: (enabled: boolean) => void;
   route: Route;
   depth: number;
   go: (r: Route) => void;

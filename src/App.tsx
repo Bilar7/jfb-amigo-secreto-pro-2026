@@ -61,6 +61,13 @@ export default function App() {
       return false;
     }
   });
+  const [deviceNotificationsEnabled, setDeviceNotificationsEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('bilar_device_notifications') === '1';
+    } catch {
+      return false;
+    }
+  });
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
     try {
@@ -87,7 +94,9 @@ export default function App() {
   const [joinOpen, setJoinOpen] = useState<{ code: string } | null>(null);
   const [sharing, setSharing] = useState<Group | null>(null);
   const pendingJoin = useRef<string>('');
+  const pendingOpenGroup = useRef<string>('');
   const seenDrawNotifications = useRef<Set<string>>(new Set());
+  const seenThreadMessages = useRef(new Map<string, { count: number; lastAt: number }>());
   const [codeAsk, setCodeAsk] = useState(false);
   const [codeInput, setCodeInput] = useState('');
 
@@ -115,11 +124,13 @@ export default function App() {
 
   /* Link de convite ?join=CODIGO */
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get('join');
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('join');
     if (code) {
       pendingJoin.current = code.toUpperCase();
-      window.history.replaceState({}, '', window.location.pathname);
     }
+    pendingOpenGroup.current = params.get('openGroup') || '';
+    if (code || pendingOpenGroup.current) window.history.replaceState({}, '', window.location.pathname);
   }, []);
 
   /* Sessão */
@@ -182,6 +193,7 @@ export default function App() {
 
   useEffect(() => {
     seenDrawNotifications.current.clear();
+    seenThreadMessages.current.clear();
     if (!uid) return;
     let initialSnapshot = true;
     return backend.watchNotifications(uid, (list) => {
@@ -202,7 +214,6 @@ export default function App() {
       pendingJoin.current = '';
     }
   }, [user]);
-
   /* ------------------------------- Navegação ------------------------------- */
   useEffect(() => {
     const onPop = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
@@ -213,6 +224,12 @@ export default function App() {
     window.history.pushState({ d: Date.now() }, '');
     setStack((s) => [...s, r]);
   }, []);
+  useEffect(() => {
+    if (!user || !groupsReady || !pendingOpenGroup.current) return;
+    const target = groups.find((g) => g.id === pendingOpenGroup.current);
+    pendingOpenGroup.current = '';
+    if (target) go({ name: 'group', id: target.id });
+  }, [user, groups, groupsReady, go]);
   const back = useCallback(() => {
     setStack((s) => {
       if (s.length > 1) {
@@ -248,6 +265,8 @@ export default function App() {
             chatError,
             darkMode,
             setDarkMode,
+            deviceNotificationsEnabled,
+            setDeviceNotificationsEnabled,
             route,
             depth: stack.length,
             go,
@@ -258,7 +277,7 @@ export default function App() {
             openShare: setSharing,
           }
         : null,
-    [user, groups, groupsReady, threads, assignments, notifications, myWishes, chatError, darkMode, route, stack.length, go, tab, back, replace],
+    [user, groups, groupsReady, threads, assignments, notifications, myWishes, chatError, darkMode, deviceNotificationsEnabled, route, stack.length, go, tab, back, replace],
   );
 
   const totalUnread = useMemo(() => {
@@ -266,6 +285,74 @@ export default function App() {
     const gids = new Set(groups.map((g) => g.id));
     return threads.filter((t) => gids.has(t.groupId)).reduce((n, t) => n + unreadOf(t, uid), 0);
   }, [threads, groups, uid]);
+
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread > 99 ? '99+' : totalUnread}) Bilar Amigo Secreto` : 'Bilar Amigo Secreto';
+    const badgeNavigator = navigator as Navigator & {
+      setAppBadge?: (contents?: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    const updateBadge = totalUnread > 0
+      ? badgeNavigator.setAppBadge?.(totalUnread)
+      : badgeNavigator.clearAppBadge?.();
+    updateBadge?.catch(() => {});
+  }, [totalUnread]);
+
+  useEffect(() => {
+    if (!uid) {
+      seenThreadMessages.current.clear();
+      return;
+    }
+    threads.forEach((thread) => {
+      const key = `${thread.groupId}/${thread.id}`;
+      const previous = seenThreadMessages.current.get(key);
+      seenThreadMessages.current.set(key, { count: thread.count, lastAt: thread.lastAt });
+      if (!previous || thread.count <= previous.count || thread.lastSenderId === uid) return;
+      if (!deviceNotificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return;
+
+      const group = groups.find((item) => item.id === thread.groupId);
+      const groupName = group?.name || 'Amigo Secreto';
+      const sender = thread.kind === 'secret' ? 'Amigo Secreto 🎭' : thread.lastSenderName || 'Nova mensagem';
+      const body = thread.lastText ? `${sender}: ${thread.lastText}` : `${sender} enviou uma mensagem.`;
+      const url = new URL(window.location.pathname, window.location.origin);
+      url.searchParams.set('openGroup', thread.groupId);
+      const options: NotificationOptions = {
+        body,
+        icon: 'icon-192.png',
+        badge: 'icon-192.png',
+        data: { url: url.toString() },
+      };
+
+      if (document.visibilityState === 'visible') return;
+      if ('serviceWorker' in navigator) {
+        void navigator.serviceWorker.ready
+          .then((registration) => registration.showNotification(`Mensagem nova · ${groupName}`, options))
+          .catch(() => {
+            try {
+              const notification = new Notification(`Mensagem nova · ${groupName}`, options);
+              notification.onclick = () => {
+                window.focus();
+                go({ name: 'group', id: thread.groupId });
+                notification.close();
+              };
+            } catch {
+              toast('Não foi possível mostrar a notificação no dispositivo.', 'error');
+            }
+          });
+      } else {
+        try {
+          const notification = new Notification(`Mensagem nova · ${groupName}`, options);
+          notification.onclick = () => {
+            window.focus();
+            go({ name: 'group', id: thread.groupId });
+            notification.close();
+          };
+        } catch {
+          toast('Não foi possível mostrar a notificação no dispositivo.', 'error');
+        }
+      }
+    });
+  }, [uid, threads, groups, deviceNotificationsEnabled, go]);
 
   const [schedulerNow, setSchedulerNow] = useState(() => Date.now());
   useEffect(() => {

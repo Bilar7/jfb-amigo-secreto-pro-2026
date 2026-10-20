@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Volume2, VolumeX, Camera, ChevronRight, CircleHelp, Gift, Loader2, Lock, LogOut, Mail, Moon, Phone, ShieldCheck, Sun, User as UserIcon, Users } from 'lucide-react';
+import { Bell, BellRing, Volume2, VolumeX, Camera, ChevronRight, CircleHelp, Gift, Loader2, Lock, LogOut, Mail, Moon, Phone, ShieldCheck, Sun, User as UserIcon, Users } from 'lucide-react';
 import { backend } from '../services/backend';
 import { friendlyError } from '../services/errors';
 import { avatarFromFile } from '../services/media';
@@ -12,7 +12,7 @@ import { sound } from '../utils/sound';
 import { TopBar } from './common';
 
 export function ProfileScreen() {
-  const { user, go, notifications, darkMode, setDarkMode } = useApp();
+  const { user, go, notifications, darkMode, setDarkMode, deviceNotificationsEnabled, setDeviceNotificationsEnabled } = useApp();
   const unread = notifications.filter((n) => !n.read).length;
   const [, force] = useState(0);
   useEffect(() => {
@@ -24,6 +24,33 @@ export function ProfileScreen() {
   const logout = async () => {
     const ok = await confirmDialog({ title: 'Terminar sessão?', message: 'Pode voltar a entrar quando quiser.', confirm: 'Sair' });
     if (ok) backend.signOut();
+  };
+  const toggleDeviceNotifications = async () => {
+    if (deviceNotificationsEnabled) {
+      setDeviceNotificationsEnabled(false);
+      try {
+        localStorage.removeItem('bilar_device_notifications');
+      } catch {
+        toast('Não foi possível guardar a preferência neste dispositivo.', 'error');
+      }
+      return;
+    }
+    if (!('Notification' in window)) {
+      toast('Este navegador não suporta notificações no dispositivo.', 'error');
+      return;
+    }
+    try {
+      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast('Permita notificações nas definições do navegador para ativar os avisos.', 'error');
+        return;
+      }
+      localStorage.setItem('bilar_device_notifications', '1');
+      setDeviceNotificationsEnabled(true);
+      toast('Notificações de mensagens ativadas neste dispositivo.');
+    } catch {
+      toast('Não foi possível guardar a preferência neste dispositivo.', 'error');
+    }
   };
   const items: [React.ElementType, string, string, () => void, number?][] = [
     [UserIcon, 'Minha Conta', 'Dados pessoais e segurança', () => go({ name: 'account' })],
@@ -68,6 +95,17 @@ export function ProfileScreen() {
             <p className="t-small">{sound.isMuted() ? 'Desligados' : 'Ligados'} · toque para {sound.isMuted() ? 'ligar' : 'desligar'}</p>
           </div>
         </button>
+        <button className="menu-item" onClick={toggleDeviceNotifications} aria-pressed={deviceNotificationsEnabled}>
+          {deviceNotificationsEnabled ? <BellRing size={22} className="lead" /> : <Bell size={22} className="lead" />}
+          <div className="grow">
+            <h3>Notificações no dispositivo</h3>
+            <p className="t-small">{deviceNotificationsEnabled ? 'Ativadas · requer app aberto' : 'Desativadas · gratuitas neste aparelho'}</p>
+          </div>
+          <span className={cx('theme-toggle', deviceNotificationsEnabled && 'on')} aria-hidden="true"><i /></span>
+        </button>
+        <p className="t-small" style={{ padding: '0 20px 8px' }}>
+          Avisos e contador de mensagens funcionam sem custos enquanto o app está aberto. O alerta com o app totalmente fechado exige um serviço push no servidor.
+        </p>
         <div className="pad" style={{ padding: '26px 20px 30px' }}>
           <button className="btn danger" onClick={logout}><LogOut size={18} /> Sair</button>
           <p className="t-small center mt16">Bilar Amigo Secreto · Bilar DigitalTech Solutions</p>

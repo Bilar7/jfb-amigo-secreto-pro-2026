@@ -11,6 +11,7 @@ Bilar DigitalTech Solutions · React + Vite + Firebase (projeto `jfb-amigo-secre
 - Participantes podem sair; o organizador pode remover participantes, adicionar contas existentes por email e transferir a organização para outro membro antes de sair.
 - Sorteio (mínimo 3): o organizador pode sortear antes do limite; o sorteio automático aguarda que o grupo fique completo. Entradas após o sorteio ficam incluídas quando o organizador o refizer.
 - Notificações personalizadas para os membros quando o sorteio é feito ou refeito.
+- Avisos de mensagens via notificações do navegador e contador de não lidas no ícone de PWA, sem custos de servidor. Requer permissão e que o app continue aberto/em execução; notificações com o app totalmente encerrado exigem serviço push no servidor.
 - Revelação privada com suspense sonoro e animação de celebração, além da contagem decrescente até ao dia do evento.
 - Chat em tempo real: chat do grupo (todos veem), conversas privadas (só os dois) e conversa secreta anónima com o amigo secreto. Texto, emojis, fotos, câmara, ficheiros (até 700 KB) e notas de voz, com ✓✓ de lida.
 - Lista de desejos com categorias, foto, preço e link da loja.
