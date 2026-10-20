@@ -295,7 +295,9 @@ export default function App() {
     const updateBadge = totalUnread > 0
       ? badgeNavigator.setAppBadge?.(totalUnread)
       : badgeNavigator.clearAppBadge?.();
-    updateBadge?.catch(() => {});
+    updateBadge?.catch((error: unknown) => {
+      console.warn('Não foi possível atualizar o contador de mensagens no ícone do app.', error);
+    });
   }, [totalUnread]);
 
   useEffect(() => {
